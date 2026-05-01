@@ -1,0 +1,26 @@
+"""Phase 0 smoke tests."""
+from __future__ import annotations
+
+from typer.testing import CliRunner
+
+from agentchaos import __version__
+from agentchaos.cli import app
+
+
+def test_version_constant_set() -> None:
+    assert __version__ == "0.1.0.dev0"
+
+
+def test_cli_version_flag() -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["--version"])
+    assert result.exit_code == 0
+    assert __version__ in result.stdout
+
+
+def test_cli_help_lists_commands() -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["--help"])
+    assert result.exit_code == 0
+    for cmd in ("init", "doctor", "run", "compare"):
+        assert cmd in result.stdout
