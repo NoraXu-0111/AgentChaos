@@ -1,0 +1,8 @@
+id: extra
+name: has extra field
+agent:
+  type: http
+  endpoint: http://localhost:8080/chat
+conversation:
+  - user: "hi"
+nonsense_extra_field: true

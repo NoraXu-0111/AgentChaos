@@ -1,0 +1,7 @@
+id: "has space"
+name: id has whitespace
+agent:
+  type: http
+  endpoint: http://localhost:8080/chat
+conversation:
+  - user: "hi"

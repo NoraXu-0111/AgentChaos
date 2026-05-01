@@ -1,0 +1,9 @@
+id: budget-only
+name: budget only
+agent:
+  type: http
+  endpoint: http://localhost:8080/chat
+conversation:
+  - user: "hello"
+budgets:
+  max_cost_usd: 0.01

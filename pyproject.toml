@@ -38,6 +38,7 @@ dev = [
     "syrupy>=4.6",
     "fastapi>=0.110",
     "uvicorn>=0.29",
+    "types-PyYAML>=6.0",
 ]
 demo = [
     "fastapi>=0.110",

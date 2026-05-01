@@ -1,0 +1,4 @@
+id: no-agent
+name: missing agent block
+conversation:
+  - user: "hi"

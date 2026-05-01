@@ -1,0 +1,6 @@
+id: empty-convo
+name: empty conversation
+agent:
+  type: http
+  endpoint: http://localhost:8080/chat
+conversation: []

@@ -1,0 +1,7 @@
+id: minimal
+name: minimal scenario
+agent:
+  type: http
+  endpoint: http://localhost:8080/chat
+conversation:
+  - user: "hello"

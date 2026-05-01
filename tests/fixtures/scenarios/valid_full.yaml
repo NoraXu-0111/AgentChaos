@@ -1,0 +1,31 @@
+id: refund-agent
+name: refund-agent
+description: Customer-support refund flow
+agent:
+  type: http
+  endpoint: http://localhost:8080/chat
+  timeout_s: 30
+  headers:
+    Authorization: "Bearer ${AGENT_API_KEY}"
+conversation:
+  - user: "I want to return my order."
+  - user: "My order number is 12345."
+expect:
+  must_call_tools: [get_order]
+  must_not_call_tools: [delete_customer]
+  final_response_contains: [refund]
+  final_response_not_contains: ["I cannot help"]
+budgets:
+  max_cost_usd: 0.05
+  max_total_latency_ms: 8000
+  max_turn_latency_ms: 5000
+  max_tool_calls: 8
+  max_llm_calls: 5
+  max_retries: 2
+  max_input_tokens: 8000
+  max_cost_regression_pct: 20
+  max_latency_regression_pct: 30
+  max_tool_call_regression_pct: 50
+  max_input_token_regression_pct: 50
+metadata:
+  env: dev

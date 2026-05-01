@@ -1,0 +1,9 @@
+id: expect-only
+name: expectation only
+agent:
+  type: http
+  endpoint: http://localhost:8080/chat
+conversation:
+  - user: "hello"
+expect:
+  final_response_contains: [hi]

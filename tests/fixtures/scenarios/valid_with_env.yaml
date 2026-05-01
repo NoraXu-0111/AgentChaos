@@ -1,0 +1,9 @@
+id: env-test
+name: env interpolation
+agent:
+  type: http
+  endpoint: "http://localhost:8080/chat"
+  headers:
+    Authorization: "Bearer ${TEST_TOKEN}"
+conversation:
+  - user: "test"

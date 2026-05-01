@@ -1,0 +1,7 @@
+id: bad-url
+name: malformed endpoint
+agent:
+  type: http
+  endpoint: "not a url"
+conversation:
+  - user: "hi"
