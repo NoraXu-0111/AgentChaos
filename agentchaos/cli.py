@@ -1,9 +1,37 @@
 """AgentChaos CLI entry point."""
 from __future__ import annotations
 
+import asyncio
+import json as _json
+import os
+import re
+import time
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Annotated
+
+import httpx
 import typer
 
 from agentchaos import __version__
+from agentchaos.profile.causes import find_causes
+from agentchaos.profile.compare import diff as profile_diff
+from agentchaos.profile.metrics import aggregate
+from agentchaos.report.terminal import render_terminal
+from agentchaos.runner.coordinator import RunCoordinator
+from agentchaos.scenario.loader import LoaderError, load_scenario, scenario_hash
+from agentchaos.scenario.schema import AgentTarget, Scenario
+from agentchaos.trace.reader import TraceReadError, read_trace
+from agentchaos.trace.schema import RunMeta, TraceEvent
+from agentchaos.transport.base import AgentTransport
+from agentchaos.transport.http import HTTPTransport
+from agentchaos.verdict import (
+    EXIT_PASS,
+    EXIT_TRANSPORT_FAIL,
+    EXIT_USAGE_ERROR,
+    Verdict,
+    compute_verdict,
+)
 
 app = typer.Typer(
     name="agentchaos",
@@ -21,55 +49,372 @@ def _version_callback(value: bool) -> None:
 
 @app.callback()
 def main(
-    version: bool = typer.Option(
-        False,
-        "--version",
-        "-V",
-        callback=_version_callback,
-        is_eager=True,
-        help="Show version and exit.",
-    ),
+    version: Annotated[
+        bool,
+        typer.Option(
+            "--version", "-V",
+            callback=_version_callback,
+            is_eager=True,
+            help="Show version and exit.",
+        ),
+    ] = False,
 ) -> None:
     """AgentChaos — reliability testing for tool-using AI agents."""
 
 
+# ----------------------------------------------------------------------------
+# init
+# ----------------------------------------------------------------------------
+
+_EXAMPLE_SCENARIO = """id: example
+name: example
+description: starter scenario — replace with your own
+agent:
+  type: http
+  endpoint: http://localhost:8080/chat
+  timeout_s: 30
+conversation:
+  - user: "hello"
+expect:
+  final_response_contains: ["hello"]
+budgets:
+  max_cost_usd: 0.10
+  max_tool_calls: 5
+  max_total_latency_ms: 8000
+"""
+
+_EXAMPLE_README = """# AgentChaos test directory
+
+Edit `scenarios/example.yaml` to point at your agent endpoint, then:
+
+    agentchaos doctor scenarios/example.yaml
+    agentchaos run scenarios/example.yaml --out runs/baseline.jsonl
+    # ...make a change to your agent...
+    agentchaos run scenarios/example.yaml --baseline runs/baseline.jsonl
+"""
+
+
 @app.command()
 def init(
-    directory: str = typer.Argument(".", help="Target directory."),
+    directory: Annotated[
+        Path,
+        typer.Argument(help="Target directory (created if missing)."),
+    ] = Path("."),
+    force: Annotated[bool, typer.Option("--force", "-f", help="Overwrite existing files.")] = False,
 ) -> None:
-    """Scaffold a new scenario folder. (Phase 7 — not yet implemented.)"""
-    typer.echo(f"init: would scaffold {directory} (not yet implemented)")
-    raise typer.Exit(code=1)
+    """Scaffold a new AgentChaos scenario folder."""
+    scenarios_dir = directory / "scenarios"
+    runs_dir = directory / "runs"
+    example = scenarios_dir / "example.yaml"
+    readme = directory / "README.md"
+
+    if example.exists() and not force:
+        typer.secho(
+            f"refusing to overwrite {example} (use --force to override)",
+            err=True, fg=typer.colors.RED,
+        )
+        raise typer.Exit(code=EXIT_USAGE_ERROR)
+
+    directory.mkdir(parents=True, exist_ok=True)
+    scenarios_dir.mkdir(parents=True, exist_ok=True)
+    runs_dir.mkdir(parents=True, exist_ok=True)
+    (runs_dir / ".gitkeep").touch(exist_ok=True)
+    example.write_text(_EXAMPLE_SCENARIO)
+    if not readme.exists() or force:
+        readme.write_text(_EXAMPLE_README)
+
+    typer.echo(f"  Created {example}")
+    typer.echo(f"  Created {runs_dir}/")
+    typer.echo(f"  Created {readme}")
+    typer.echo("")
+    typer.echo("Next: agentchaos doctor scenarios/example.yaml")
+
+
+# ----------------------------------------------------------------------------
+# doctor
+# ----------------------------------------------------------------------------
+
+_LITERAL_ENV_RE = re.compile(r"\$\{([A-Z_][A-Z0-9_]*)\}")
+
+
+async def _ping_endpoint(target: AgentTarget) -> tuple[bool, str]:
+    """Probe the agent endpoint with a tiny payload. Returns (ok, detail)."""
+    transport = HTTPTransport(target)
+    try:
+        t0 = time.perf_counter()
+        try:
+            res = await transport.send("doctor", "ping")
+        except Exception as exc:
+            return False, f"transport raised: {exc!r}"
+        dt_ms = int((time.perf_counter() - t0) * 1000)
+        if res.error is not None:
+            return False, f"{res.error} ({dt_ms}ms)"
+        return True, f"HTTP {res.status_code or 200}, {dt_ms}ms, fidelity={res.fidelity}"
+    finally:
+        await transport.aclose()
 
 
 @app.command()
 def doctor(
-    scenario: str | None = typer.Argument(None, help="Optional scenario file to validate."),
+    scenario: Annotated[
+        Path | None,
+        typer.Argument(help="Optional scenario YAML to validate."),
+    ] = None,
 ) -> None:
-    """Validate scenario and ping endpoint. (Phase 7 — not yet implemented.)"""
-    typer.echo(f"doctor: would check {scenario or 'config'} (not yet implemented)")
-    raise typer.Exit(code=1)
+    """Validate scenario and (if provided) probe the agent endpoint."""
+    errors = 0
+    warnings = 0
+
+    if scenario is None:
+        typer.echo("(pass a scenario file to do full checks)")
+        raise typer.Exit(code=EXIT_PASS)
+
+    # Step 1: parse
+    try:
+        s = load_scenario(scenario)
+    except LoaderError as exc:
+        typer.secho(f"✗ Scenario failed to parse: {exc}", err=True, fg=typer.colors.RED)
+        raise typer.Exit(code=EXIT_USAGE_ERROR) from None
+    typer.echo(f"✓ Scenario parses ({s.name}, {len(s.conversation)} turn(s))")
+
+    # Step 2: env-var expansion check
+    leftover_vars: set[str] = set()
+    for v in s.agent.headers.values():
+        for m in _LITERAL_ENV_RE.findall(v):
+            leftover_vars.add(m)
+    if leftover_vars:
+        warnings += 1
+        for name in sorted(leftover_vars):
+            typer.secho(
+                f"⚠ env var {name} is referenced in headers but not set",
+                fg=typer.colors.YELLOW,
+            )
+
+    # Step 3: ping endpoint
+    ok, detail = asyncio.run(_ping_endpoint(s.agent))
+    if ok:
+        typer.echo(f"✓ Endpoint reachable: {s.agent.endpoint} ({detail})")
+    else:
+        errors += 1
+        typer.secho(
+            f"✗ Endpoint not reachable: {s.agent.endpoint} ({detail})",
+            err=True, fg=typer.colors.RED,
+        )
+
+    typer.echo("")
+    typer.echo(f"{warnings} warning(s), {errors} error(s).")
+    if errors:
+        raise typer.Exit(code=EXIT_TRANSPORT_FAIL)
+    raise typer.Exit(code=EXIT_PASS)
+
+
+# ----------------------------------------------------------------------------
+# run
+# ----------------------------------------------------------------------------
+
+
+def _build_transport(target: AgentTarget) -> AgentTransport:
+    """Indirection so tests can monkeypatch the transport."""
+    return HTTPTransport(target)
+
+
+def _default_out_path() -> Path:
+    return Path("runs") / f"run-{datetime.now(UTC).strftime('%Y-%m-%dT%H-%M-%S')}.jsonl"
+
+
+def _emit_json_verdict(verdict: Verdict, trace_path: Path, run_id: str) -> None:
+    payload = {
+        "outcome": verdict.outcome,
+        "exit_code": verdict.exit_code,
+        "violations": [v.model_dump() for v in verdict.violations],
+        "trace_path": str(trace_path),
+        "run_id": run_id,
+    }
+    typer.echo(_json.dumps(payload, indent=2))
+
+
+async def _execute_run(
+    scenario: Scenario,
+    scenario_path: Path,
+    out_path: Path,
+    baseline_path: Path | None,
+    *,
+    quiet: bool,
+    json_output: bool,
+    seed: int | None,
+    strict_scenario: bool,
+    transport: AgentTransport | None = None,
+) -> int:
+    if transport is None:
+        transport = _build_transport(scenario.agent)
+    coordinator = RunCoordinator(scenario, transport, seed=seed)
+    try:
+        result = await coordinator.run_once(out_path, scenario_path=str(scenario_path))
+    finally:
+        await transport.aclose()
+
+    candidate_trace: list[TraceEvent] = list(read_trace(result.trace_path))
+    candidate_metrics = aggregate(candidate_trace)
+
+    diff_obj = None
+    causes: list = []
+    if baseline_path is not None:
+        try:
+            baseline_trace = list(read_trace(baseline_path))
+        except (FileNotFoundError, TraceReadError) as exc:
+            typer.secho(f"✗ baseline trace error: {exc}", err=True, fg=typer.colors.RED)
+            return EXIT_USAGE_ERROR
+        baseline_metrics = aggregate(baseline_trace)
+        candidate_hash = scenario_hash(scenario)
+        baseline_hash = _baseline_scenario_hash(baseline_trace)
+        drift = baseline_hash is not None and baseline_hash != candidate_hash
+        if drift and strict_scenario:
+            typer.secho("✗ scenario hash drift; refusing under --strict-scenario",
+                        err=True, fg=typer.colors.RED)
+            return EXIT_USAGE_ERROR
+        diff_obj = profile_diff(baseline_metrics, candidate_metrics, scenario_drift=drift)
+        causes = find_causes(baseline_trace, candidate_trace, diff_obj)
+
+    verdict = compute_verdict(
+        candidate_metrics,
+        scenario.expect,
+        scenario.budgets,
+        diff=diff_obj,
+        final_text=result.session.final_text,
+        session_error=result.session.error,
+    )
+
+    if json_output:
+        _emit_json_verdict(verdict, result.trace_path, result.run_id)
+    elif not quiet:
+        typer.echo(
+            render_terminal(
+                scenario_name=scenario.name,
+                verdict=verdict,
+                metrics=candidate_metrics,
+                diff=diff_obj,
+                causes=causes,
+                trace_path=result.trace_path,
+            )
+        )
+    return verdict.exit_code
+
+
+def _baseline_scenario_hash(trace: list[TraceEvent]) -> str | None:
+    for ev in trace:
+        if isinstance(ev, RunMeta):
+            return ev.scenario_hash
+    return None
 
 
 @app.command()
 def run(
-    scenario: str = typer.Argument(..., help="Scenario YAML file."),
-    out: str | None = typer.Option(None, "--out", help="Trace output path."),
-    baseline: str | None = typer.Option(None, "--baseline", help="Baseline trace path."),
+    scenario: Annotated[Path, typer.Argument(help="Scenario YAML file.")],
+    out: Annotated[
+        Path | None,
+        typer.Option("--out", help="Trace output path."),
+    ] = None,
+    baseline: Annotated[
+        Path | None,
+        typer.Option("--baseline", help="Baseline trace to diff against."),
+    ] = None,
+    quiet: Annotated[bool, typer.Option("--quiet", help="Suppress the report.")] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit machine-readable verdict.")
+    ] = False,
+    seed: Annotated[int | None, typer.Option("--seed", help="Deterministic seed.")] = None,
+    strict_scenario: Annotated[
+        bool, typer.Option("--strict-scenario", help="Fail on scenario hash drift."),
+    ] = False,
 ) -> None:
-    """Execute a scenario and emit a trace. (Phase 7 — not yet implemented.)"""
-    typer.echo(f"run: would execute {scenario} (not yet implemented)")
-    raise typer.Exit(code=1)
+    """Execute a scenario and emit a trace + verdict."""
+    try:
+        s = load_scenario(scenario)
+    except LoaderError as exc:
+        typer.secho(f"✗ {exc}", err=True, fg=typer.colors.RED)
+        raise typer.Exit(code=EXIT_USAGE_ERROR) from None
+
+    out_path = out if out is not None else _default_out_path()
+    code = asyncio.run(
+        _execute_run(
+            s,
+            scenario,
+            out_path,
+            baseline,
+            quiet=quiet,
+            json_output=json_output,
+            seed=seed,
+            strict_scenario=strict_scenario,
+        )
+    )
+    raise typer.Exit(code=code)
+
+
+# ----------------------------------------------------------------------------
+# compare
+# ----------------------------------------------------------------------------
 
 
 @app.command()
 def compare(
-    baseline: str = typer.Argument(..., help="Baseline trace path."),
-    candidate: str = typer.Argument(..., help="Candidate trace path."),
+    baseline: Annotated[Path, typer.Argument(help="Baseline trace path.")],
+    candidate: Annotated[Path, typer.Argument(help="Candidate trace path.")],
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit machine-readable diff.")
+    ] = False,
 ) -> None:
-    """Diff two existing traces. (Phase 7 — not yet implemented.)"""
-    typer.echo(f"compare: would diff {baseline} vs {candidate} (not yet implemented)")
-    raise typer.Exit(code=1)
+    """Diff two existing traces. Pure analysis — no agent calls."""
+    try:
+        b_trace = list(read_trace(baseline))
+        c_trace = list(read_trace(candidate))
+    except (FileNotFoundError, TraceReadError) as exc:
+        typer.secho(f"✗ {exc}", err=True, fg=typer.colors.RED)
+        raise typer.Exit(code=EXIT_USAGE_ERROR) from None
+
+    b_metrics = aggregate(b_trace)
+    c_metrics = aggregate(c_trace)
+    b_hash = _baseline_scenario_hash(b_trace)
+    c_hash = _baseline_scenario_hash(c_trace)
+    drift = b_hash is not None and c_hash is not None and b_hash != c_hash
+    d = profile_diff(b_metrics, c_metrics, scenario_drift=drift)
+    causes = find_causes(b_trace, c_trace, d)
+
+    # No scenario means no budgets/expectations to enforce — purely informational.
+    verdict = Verdict(outcome="pass", violations=[], exit_code=EXIT_PASS)
+    scenario_name = _scenario_name_from_trace(c_trace) or "compare"
+
+    if json_output:
+        payload = {
+            "outcome": "pass",
+            "exit_code": EXIT_PASS,
+            "scenario_drift": drift,
+            "deltas": [d.model_dump() for d in d.deltas],
+            "causes": [c.model_dump() for c in causes],
+        }
+        typer.echo(_json.dumps(payload, indent=2))
+    else:
+        typer.echo(
+            render_terminal(
+                scenario_name=scenario_name,
+                verdict=verdict,
+                metrics=c_metrics,
+                diff=d,
+                causes=causes,
+                trace_path=candidate,
+            )
+        )
+    raise typer.Exit(code=EXIT_PASS)
+
+
+def _scenario_name_from_trace(trace: list[TraceEvent]) -> str | None:
+    for ev in trace:
+        if isinstance(ev, RunMeta):
+            return ev.scenario_name
+    return None
+
+
+# Suppress unused-import warnings on these symbols (kept for re-export / typing).
+_keep = (httpx, os)
 
 
 if __name__ == "__main__":
