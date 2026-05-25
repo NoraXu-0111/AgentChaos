@@ -5,17 +5,19 @@ Plan: implement Phases 0-8 from `/Users/noraxu/Desktop/Finance/AgentChaos/13 - v
 
 ## Status
 
+All phases 0-8 complete. Full suite green (123 tests passing).
+
 | Phase | Title | Status | Notes |
 |-------|-------|--------|-------|
-| 0 | Repo bootstrap | in progress | — |
-| 1 | Scenario + Budget schemas | pending | — |
-| 2 | Trace + Transport | pending | — |
-| 3 | Runner | pending | — |
-| 4 | Metrics | pending | — |
-| 5 | Compare + Causes | pending | — |
-| 6 | Verdict + Terminal report | pending | — |
-| 7 | CLI wiring | pending | — |
-| 8 | Demo + README | pending | — |
+| 0 | Repo bootstrap | done | CLI skeleton, CI |
+| 1 | Scenario + Budget schemas | done | hashing, absolute & regression checks |
+| 2 | Trace + Transport | done | schema/recorder/reader, HTTPTransport (3-tier fidelity) |
+| 3 | Runner | done | Session + RunCoordinator, end-to-end vs MockTransport |
+| 4 | Metrics | done | aggregate(trace) -> by_model, by_tool, tool_sequence |
+| 5 | Compare + Causes | done | compare + cause detection |
+| 6 | Verdict + Terminal report | done | — |
+| 7 | CLI wiring | done | init / doctor / run / compare |
+| 8 | Demo + README | done | refund-agent example + e2e demo test |
 
 ## Decisions and deviations
 
