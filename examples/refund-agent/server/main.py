@@ -22,7 +22,7 @@ app = FastAPI(title="AgentChaos refund-agent demo")
 # In-memory session state. Real agents would use a store.
 _SESSIONS: dict[str, dict[str, Any]] = {}
 
-# Crude cost model: token count × per-token rate. Realistic enough for demo.
+# Crude cost model: token count x per-token rate. Realistic enough for demo.
 _INPUT_TOKEN_COST = 0.00000015  # ~ gpt-4o-mini input
 _OUTPUT_TOKEN_COST = 0.00000060
 

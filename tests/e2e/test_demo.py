@@ -47,7 +47,7 @@ def server() -> Iterator[str]:
         try:
             httpx.get(f"http://127.0.0.1:{port}/health", timeout=0.5)
             break
-        except Exception:  # noqa: BLE001
+        except Exception:
             time.sleep(0.05)
     else:
         raise RuntimeError("demo server failed to start")
