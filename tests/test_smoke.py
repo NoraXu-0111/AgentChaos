@@ -8,7 +8,10 @@ from agentchaos.cli import app
 
 
 def test_version_constant_set() -> None:
-    assert __version__ == "0.1.0.dev0"
+    # Version is read from package metadata (single source of truth in
+    # pyproject.toml); assert it is set and PEP 440-ish, not a literal value.
+    assert __version__
+    assert __version__[0].isdigit()
 
 
 def test_cli_version_flag() -> None:

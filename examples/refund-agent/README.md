@@ -59,24 +59,27 @@ You should see:
 Verdict: FAIL
 
 Why:
-  - [regression_budget] max_cost_regression_pct: cost regressed +<...>% (limit +20.0%)
-  - [regression_budget] max_input_token_regression_pct: ...
+  - [regression_budget] max_cost_regression_pct: cost regressed +68.2% (limit +20.0%)
+  - [regression_budget] max_input_token_regression_pct: input_tokens regressed +90.8% (limit +30.0%)
 
 Metrics:
-  Metric                Baseline       Current        Δ   Status
-  ----------------------------------------------------------------
-  Cost                   $0.0006        $0.0019    +217%   FAIL
-  Input tokens             1080            2360    +118%   FAIL
-  ...
+  Metric                      Baseline       Current         Δ  Status
+  --------------------------------------------------------------------
+  Cost                         $0.0004       $0.0006    +68.2%  FAIL
+  Input tokens                    1850          3530    +90.8%  FAIL
+  Output tokens                    150           150     +0.0%  PASS
+  LLM calls                          3             3     +0.0%  PASS
+  Tool calls                         2             2     +0.0%  PASS
 
 Possible contributors:
+  - input_tokens grew +90.8% (+1680 tokens)
+  - per-model cost grew on gpt-4o-mini: $0.000368 → $0.000619 (+68.2%)
   - metadata.rag_chunks changed on model_call planner (turn 0): 5 -> 12  [correlates]
-  - metadata.rag_chunks changed on model_call final_response (turn 1): 5 -> 12  [correlates]
-  - input_tokens grew +118.5% (+1280 tokens)
-  ...
 
 Exit code: 2
 ```
+
+(Exact dollar figures depend on the pricing table; the deltas and the `rag_chunks` cause are what matter.)
 
 Cleanup:
 

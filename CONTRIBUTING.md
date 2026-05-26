@@ -21,8 +21,8 @@ These keep AgentChaos from drifting into eval-tool territory. PRs proposing them
 ## Development
 
 ```bash
-git clone https://github.com/agentchaos/agentchaos
-cd agentchaos
+git clone https://github.com/NoraXu-0111/AgentChaos
+cd AgentChaos
 uv venv -p 3.11 .venv
 source .venv/bin/activate
 uv pip install -e ".[dev]"
