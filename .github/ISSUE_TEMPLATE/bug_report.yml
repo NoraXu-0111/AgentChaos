@@ -1,0 +1,74 @@
+name: Bug report
+description: Report incorrect behavior in AgentChaos.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. If you attach scenarios or traces, scrub API keys, customer data, and internal URLs first.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What went wrong?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: Minimal commands, scenario YAML, and endpoint behavior needed to reproduce.
+      placeholder: |
+        agentchaos doctor scenarios/example.yaml
+        agentchaos run scenarios/example.yaml --out runs/baseline.jsonl
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include exit code and report output if relevant.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: AgentChaos version
+      placeholder: "agentchaos --version"
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - CLI
+        - Scenario loading
+        - HTTP transport
+        - Trace recording/reading
+        - Metrics or diff
+        - Budget or expectation verdict
+        - Terminal report
+        - Demo or docs
+        - Packaging/install
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python version and OS
+      placeholder: "Python 3.11.14 on macOS 15"
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: Links, sanitized trace snippets, or anything else useful.

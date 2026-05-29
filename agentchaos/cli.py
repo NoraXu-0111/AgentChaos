@@ -71,7 +71,7 @@ name: example
 description: starter scenario — replace with your own
 agent:
   type: http
-  endpoint: http://localhost:8080/chat
+  endpoint: http://127.0.0.1:8080/chat
   timeout_s: 30
 conversation:
   - user: "hello"

@@ -33,7 +33,7 @@ A scenario is plain YAML: a conversation, the tools you expect, and operational 
 id: refund-agent
 agent:
   type: http
-  endpoint: http://localhost:8080/chat
+  endpoint: http://127.0.0.1:8080/chat
 conversation:
   - user: "I want to return my order."
   - user: "My order number is 12345."
@@ -91,6 +91,8 @@ scenario.yaml → run → trace.jsonl → metrics → compare(baseline) → term
 ```
 
 Your agent is any HTTP endpoint that takes a message and returns a response. AgentChaos auto-detects one of three **fidelity tiers** from your response shape — full per-call cost attribution, aggregate usage, or message-only — and tells you which on the first run. No SDK, no instrumentation, no framework lock-in.
+
+See the [HTTP integration contract](docs/http-contract.md) for the exact request/response shapes and fidelity tiers.
 
 | Command | Purpose |
 |---------|---------|

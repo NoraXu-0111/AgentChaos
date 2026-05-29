@@ -1,0 +1,58 @@
+name: Feature request
+description: Propose an AgentChaos improvement.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        AgentChaos is intentionally narrow: operational reliability for tool-using agents. It does not do answer-quality scoring, prompt management, or dataset management in core.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What operational failure or workflow pain does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should AgentChaos do?
+    validations:
+      required: true
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope fit
+      options:
+        - Cost/token/latency regression detection
+        - Tool-call/retry/error reliability
+        - Scenario, trace, or report UX
+        - CI/release/project hygiene
+        - Documentation or examples
+        - Other operational reliability
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Existing workaround or other tools you tried.
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence of demand
+      description: Real incident, design partner request, repeated user request, or production use case.
+  - type: checkboxes
+    id: boundaries
+    attributes:
+      label: Boundaries
+      options:
+        - label: This is not answer-quality scoring or LLM-as-judge in core.
+          required: true
+        - label: This is not prompt management.
+          required: true
+        - label: This is not dataset management.
+          required: true

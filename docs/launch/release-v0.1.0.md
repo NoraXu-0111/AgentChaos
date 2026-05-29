@@ -1,6 +1,7 @@
 # Release notes draft — v0.1.0
 
-Use after PyPI publish succeeds. Commands:
+Use after the checks in [the v0 publish checklist](../release-checklist.md)
+pass and PyPI publish succeeds. Commands:
 
 ```bash
 git checkout main && git pull

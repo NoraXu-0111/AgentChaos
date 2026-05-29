@@ -4,7 +4,7 @@ description: Confirm the refund agent calls get_order and emits a return label.
 
 agent:
   type: http
-  endpoint: http://localhost:8080/chat
+  endpoint: http://127.0.0.1:8080/chat
   timeout_s: 10
 
 conversation:
