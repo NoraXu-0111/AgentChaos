@@ -18,7 +18,7 @@ Eval tools (LangSmith, Braintrust, DeepEval) score answer *quality*. Load tools 
 ## Quickstart
 
 ```bash
-pip install agentchaos
+pip install agentchaos-reliability
 agentchaos init my-agent-tests
 cd my-agent-tests
 agentchaos doctor scenarios/example.yaml      # validate + ping your agent

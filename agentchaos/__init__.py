@@ -3,6 +3,6 @@
 from importlib.metadata import PackageNotFoundError, version
 
 try:
-    __version__ = version("agentchaos")
+    __version__ = version("agentchaos-reliability")
 except PackageNotFoundError:  # running from a source checkout without install
     __version__ = "0.0.0+unknown"

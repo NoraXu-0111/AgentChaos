@@ -1,12 +1,14 @@
 # v0 publish checklist
 
-This checklist is for publishing `agentchaos` v0.1.0 publicly.
+This checklist is for publishing the `agentchaos-reliability` distribution
+v0.1.0 publicly.
 
 ## Manual gates
 
 - The repository is public before launch posts go out.
-- PyPI project ownership is confirmed for `agentchaos`.
-- `pip install agentchaos` works in a clean virtual environment after publish.
+- PyPI project ownership is confirmed for `agentchaos-reliability`.
+- `pip install agentchaos-reliability` works in a clean virtual environment
+  after publish.
 - The refund-agent demo reproduces the baseline PASS and regression FAIL report.
 - The README's example output still matches the demo closely enough to be honest.
 - You have time to respond to launch feedback during the first hour.
@@ -86,7 +88,7 @@ Immediately verify from a clean environment:
 ```bash
 python -m venv /tmp/agentchaos-install-check
 source /tmp/agentchaos-install-check/bin/activate
-pip install agentchaos
+pip install agentchaos-reliability
 agentchaos --version
 agentchaos --help
 deactivate

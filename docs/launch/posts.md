@@ -5,7 +5,7 @@ one concrete story: **a silent cost regression caught in CI, with the cause
 named.** Lead with that everywhere; don't bury it under feature lists.
 
 Pre-flight before posting any of these:
-- `pip install agentchaos` works on a clean machine.
+- `pip install agentchaos-reliability` works on a clean machine.
 - The demo reproduces the FAIL report in <60s.
 - The repo README's wow-report matches current output.
 - You have ~1 hour free to answer comments in the first wave (matters most on HN).
@@ -42,7 +42,7 @@ Pre-flight before posting any of these:
 > dashboard. v1 adds chaos injection (break your agent on purpose in CI).
 >
 > Apache-2.0, Python 3.11+. Demo runs in under a minute:
-> `pip install agentchaos` → repo has a refund-agent example.
+> `pip install agentchaos-reliability` → repo has a refund-agent example.
 >
 > Repo: https://github.com/NoraXu-0111/AgentChaos
 > Would love feedback, especially from people running tool-using agents in prod.

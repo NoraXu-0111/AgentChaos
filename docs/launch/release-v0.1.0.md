@@ -43,7 +43,7 @@ Exit code: 2
 
 ### Install
 ```bash
-pip install agentchaos
+pip install agentchaos-reliability
 ```
 Python 3.11+. macOS, Linux, Windows (CI-tested on all three).
 
