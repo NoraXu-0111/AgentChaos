@@ -1,11 +1,13 @@
 """End-to-end smoke test of the refund-agent demo.
 
-Spins up the demo's FastAPI server in a thread, records a baseline against
-``rag_chunks=5`` and a candidate against ``rag_chunks=12``, and asserts the
-CLI flags the cost regression with a metadata.rag_chunks contributor.
+Spins up the demo's agent server AND its tool server in threads (the agent now
+makes real outbound HTTP tool calls), records a baseline against ``rag_chunks=5``
+and a candidate against ``rag_chunks=12``, and asserts the CLI flags the cost
+regression with a metadata.rag_chunks contributor.
 """
 from __future__ import annotations
 
+import os
 import socket
 import sys
 import threading
@@ -23,22 +25,16 @@ from agentchaos.cli import app
 pytestmark = pytest.mark.e2e
 
 
-@pytest.fixture(scope="module")
-def server() -> Iterator[str]:
-    # Make examples/refund-agent importable.
-    repo_root = Path(__file__).resolve().parent.parent.parent
-    demo_dir = repo_root / "examples" / "refund-agent"
-    sys.path.insert(0, str(demo_dir))
-    try:
-        from server.main import app as fastapi_app  # type: ignore[import-not-found]
-    finally:
-        sys.path.pop(0)
-
+def _free_port() -> int:
     s = socket.socket()
     s.bind(("127.0.0.1", 0))
     port = s.getsockname()[1]
     s.close()
-    config = uvicorn.Config(fastapi_app, host="127.0.0.1", port=port, log_level="error")
+    return port
+
+
+def _serve(fastapi_app: object, port: int) -> uvicorn.Server:
+    config = uvicorn.Config(fastapi_app, host="127.0.0.1", port=port, log_level="error")  # type: ignore[arg-type]
     server_obj = uvicorn.Server(config)
     thread = threading.Thread(target=server_obj.run, daemon=True)
     thread.start()
@@ -46,14 +42,38 @@ def server() -> Iterator[str]:
     while time.time() < deadline:
         try:
             httpx.get(f"http://127.0.0.1:{port}/health", timeout=0.5)
-            break
+            return server_obj
         except Exception:
             time.sleep(0.05)
+    raise RuntimeError(f"demo server on :{port} failed to start")
+
+
+@pytest.fixture(scope="module")
+def server() -> Iterator[str]:
+    # Make examples/refund-agent importable.
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    demo_dir = repo_root / "examples" / "refund-agent"
+    sys.path.insert(0, str(demo_dir))
+    try:
+        from server.main import app as agent_app  # type: ignore[import-not-found]
+        from tools.main import app as tools_app  # type: ignore[import-not-found]
+    finally:
+        sys.path.pop(0)
+
+    agent_port = _free_port()
+    tools_port = _free_port()
+    agent_srv = _serve(agent_app, agent_port)
+    tools_srv = _serve(tools_app, tools_port)
+    prior = os.environ.get("TOOLS_BASE_URL")
+    os.environ["TOOLS_BASE_URL"] = f"http://127.0.0.1:{tools_port}"
+    yield f"http://127.0.0.1:{agent_port}"
+    if prior is None:
+        os.environ.pop("TOOLS_BASE_URL", None)
     else:
-        raise RuntimeError("demo server failed to start")
-    yield f"http://127.0.0.1:{port}"
-    server_obj.should_exit = True
-    thread.join(timeout=3)
+        os.environ["TOOLS_BASE_URL"] = prior
+    agent_srv.should_exit = True
+    tools_srv.should_exit = True
+    time.sleep(0.2)
 
 
 def _write_scenario(path: Path, endpoint: str) -> None:

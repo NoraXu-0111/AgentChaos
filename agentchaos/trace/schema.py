@@ -91,6 +91,27 @@ class ToolCall(_BaseEvent):
     parent_seq: int | None = None
 
 
+class ChaosInjected(_BaseEvent):
+    kind: Literal["chaos_injected"] = "chaos_injected"
+    target: str
+    policy: str
+    injection_type: Literal["status_code", "latency"]
+    value: int = Field(..., ge=0)
+    tool_name: str
+    args_hash: str | None = None
+
+
+class ToolResponse(_BaseEvent):
+    kind: Literal["tool_response"] = "tool_response"
+    tool_name: str
+    status: int = Field(..., ge=0)
+    size_bytes: int = Field(..., ge=0)
+    headers_subset: dict[str, str] = Field(default_factory=dict)
+    body: dict[str, Any] | None = None
+    chaos_injected: bool = False
+    args_hash: str | None = None
+
+
 class Retry(_BaseEvent):
     kind: Literal["retry"] = "retry"
     turn_index: int = Field(..., ge=0)
@@ -126,6 +147,8 @@ TraceEvent = Annotated[
     | AgentTurn
     | ModelCall
     | ToolCall
+    | ChaosInjected
+    | ToolResponse
     | Retry
     | SessionEnd
     | RunEnd,

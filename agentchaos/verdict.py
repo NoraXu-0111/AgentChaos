@@ -1,22 +1,26 @@
 """Combine expectation checks, budget checks, and regression checks into a Verdict."""
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
 from agentchaos.budget.check import check_absolute, check_detectors, check_regression
 from agentchaos.budget.schema import Budget
+from agentchaos.chaos.policy import ChaosPolicy
 from agentchaos.detectors.schema import Finding
 from agentchaos.profile.compare import Diff
 from agentchaos.profile.metrics import Metrics
 from agentchaos.scenario.schema import Expectation
+from agentchaos.trace.schema import AgentTurn, ChaosInjected, TraceEvent
 from agentchaos.violations import Violation
 
 # Exit codes per v0 plan.
 EXIT_PASS = 0
 EXIT_USAGE_ERROR = 1
 EXIT_BUDGET_OR_EXPECTATION_FAIL = 2
+EXIT_CHAOS_FAIL = 3
 EXIT_TRANSPORT_FAIL = 4
 
 
@@ -82,6 +86,47 @@ def check_expectations(
     return violations
 
 
+def check_chaos_expectations(
+    chaos: ChaosPolicy | None,
+    trace: Iterable[TraceEvent],
+    session_error: str | None,
+) -> list[Violation]:
+    """Return chaos-related Violations.
+
+    When ``expect_fallback`` is set and chaos was actually injected, the agent
+    must degrade gracefully. Two signals indicate it did NOT:
+
+    - a transport-level ``session_error`` (the agent crashed outright), or
+    - an ``AgentTurn`` that surfaced an ``error`` to the user instead of a
+      recovered, fallback response.
+    """
+    if chaos is None:
+        return []
+
+    trace_events = list(trace)
+    injected = [e for e in trace_events if isinstance(e, ChaosInjected)]
+    if not (chaos.expect_fallback and injected):
+        return []
+
+    agent_errors = [
+        e for e in trace_events if isinstance(e, AgentTurn) and e.error is not None
+    ]
+    if session_error is None and not agent_errors:
+        return []
+
+    detail = session_error or (agent_errors[0].error if agent_errors else "agent error")
+    return [
+        Violation(
+            kind="chaos",
+            name="expect_fallback",
+            detail=(
+                "chaos was injected but the agent failed instead of taking a "
+                f"fallback path: {detail}"
+            ),
+        )
+    ]
+
+
 def compute_verdict(
     metrics: Metrics,
     expectation: Expectation,
@@ -91,11 +136,14 @@ def compute_verdict(
     final_text: str = "",
     session_error: str | None = None,
     findings: list[Finding] | None = None,
+    chaos: ChaosPolicy | None = None,
+    trace: Iterable[TraceEvent] | None = None,
 ) -> Verdict:
     """Combine all checks into a Verdict.
 
-    Transport-level session errors map to exit 4 and short-circuit the rest of
-    the checks — no point asserting expectations on a half-run conversation.
+    Precedence: a transport-level session error (exit 4) short-circuits
+    everything. Otherwise chaos failures (exit 3) dominate budget/expectation
+    failures (exit 2).
     """
     if session_error is not None:
         return Verdict(
@@ -110,13 +158,20 @@ def compute_verdict(
             exit_code=EXIT_TRANSPORT_FAIL,
         )
 
-    violations: list[Violation] = []
-    violations.extend(check_expectations(expectation, metrics, final_text))
-    violations.extend(check_absolute(metrics, budget))
-    if diff is not None:
-        violations.extend(check_regression(diff.delta_pct_map(), budget))
-    violations.extend(check_detectors(findings or [], budget))
+    trace_list = list(trace) if trace is not None else []
+    chaos_violations = check_chaos_expectations(chaos, trace_list, session_error)
 
-    outcome: Literal["pass", "fail"] = "fail" if violations else "pass"
-    exit_code = EXIT_BUDGET_OR_EXPECTATION_FAIL if violations else EXIT_PASS
+    other_violations: list[Violation] = []
+    other_violations.extend(check_expectations(expectation, metrics, final_text))
+    other_violations.extend(check_absolute(metrics, budget))
+    if diff is not None:
+        other_violations.extend(check_regression(diff.delta_pct_map(), budget))
+    other_violations.extend(check_detectors(findings or [], budget))
+
+    violations = chaos_violations + other_violations
+    if not violations:
+        return Verdict(outcome="pass", violations=violations, exit_code=EXIT_PASS)
+
+    exit_code = EXIT_CHAOS_FAIL if chaos_violations else EXIT_BUDGET_OR_EXPECTATION_FAIL
+    outcome: Literal["pass", "fail"] = "fail"
     return Verdict(outcome=outcome, violations=violations, exit_code=exit_code)

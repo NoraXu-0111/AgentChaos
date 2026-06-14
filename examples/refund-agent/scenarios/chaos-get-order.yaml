@@ -1,0 +1,33 @@
+id: refund-chaos-get-order
+name: refund-chaos-get-order
+description: >
+  Inject a 50% failure_rate (503) on the get_order tool and assert the agent
+  takes its observable fallback path instead of crashing.
+
+agent:
+  type: http
+  endpoint: http://localhost:8080/chat
+  timeout_s: 10
+
+seed: 42
+
+conversation:
+  - user: "I want to return my order."
+  - user: "My order number is 12345."
+
+chaos:
+  seed: 42
+  expect_fallback: true
+  targets:
+    - tool: get_order
+      policy:
+        failure_rate: 0.5
+        status_code: 503
+
+expect:
+  final_response_not_contains: ["Traceback", "internal server error"]
+
+budgets:
+  max_cost_usd: 0.05
+  max_total_latency_ms: 8000
+  max_tool_calls: 6
