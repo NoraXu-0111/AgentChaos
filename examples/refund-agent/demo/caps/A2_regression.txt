@@ -1,0 +1,36 @@
+AgentChaos — refund-rag-cost-regression
+
+Verdict: FAIL
+
+Why:
+  - [regression_budget] max_cost_regression_pct: cost regressed +68.2% (limit +20.0%)
+  - [regression_budget] max_input_token_regression_pct: input_tokens regressed +90.8% (limit +30.0%)
+
+Metrics:
+  Metric                      Baseline       Current         Δ  Status
+  --------------------------------------------------------------------
+  Cost                         $0.0004       $0.0006    +68.2%  FAIL  
+  Input tokens                    1850          3530    +90.8%  FAIL  
+  Output tokens                    150           150     +0.0%  PASS  
+  LLM calls                          3             3     +0.0%  PASS  
+  Tool calls                         2             2     +0.0%  PASS  
+  Retries                            0             0        +0  PASS  
+  Total latency                   14ms          15ms     +7.1%  PASS  
+  Max turn latency                12ms          12ms     +0.0%  PASS  
+  Errors                             0             0        +0  PASS  
+
+Tool sequence:
+  baseline: get_order -> create_return_label
+  current:  get_order -> create_return_label
+
+Possible contributors:
+  - input_tokens grew +90.8% (+1680 tokens)
+  - per-model cost grew on gpt-4o-mini: $0.000368 → $0.000619 (+68.2%)
+  - metadata.rag_chunks changed on model_call final_response (turn 1): 5 → 12  [correlates]
+  - metadata.rag_chunks changed on model_call planner (turn 0): 5 → 12  [correlates]
+  - metadata.rag_chunks changed on model_call planner (turn 1): 5 → 12  [correlates]
+
+Trace:    demo/runs/candidate.jsonl
+Fidelity: full
+Exit code: 2
+exit=

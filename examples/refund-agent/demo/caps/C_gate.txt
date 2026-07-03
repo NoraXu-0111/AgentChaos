@@ -1,0 +1,18 @@
+########## CI GATE: three checks, one merge decision ##########
+
+$ agentchaos run scenarios/02-rag-cost-regression.yaml
+  -> exit 0   (clean change: merge proceeds)
+
+$ agentchaos run scenarios/02-rag-cost-regression.yaml --baseline baseline.jsonl   # rag_chunks 5->12
+  -> exit 2   (cost regression: BLOCKED)
+
+$ agentchaos run scenarios/chaos-get-order.yaml   # broken agent, no fallback
+  -> exit 4   (agent crashed under chaos: BLOCKED)
+
+------------------------------------------------------------
+Gate summary:
+  clean ............... exit 0   PASS
+  cost regression ..... exit 2   BLOCKED
+  chaos (broken) ...... exit 4   BLOCKED
+
+Merge decision: BLOCKED — 2 of 3 checks failed. Fix before merging.

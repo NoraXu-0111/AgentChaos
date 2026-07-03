@@ -83,6 +83,9 @@ runs-against-any-endpoint angle.
 
 ## X / short post
 
+Superseded — polished X drafts (link-in-reply format, hooks, launch thread)
+live in `content-calendar.md`. Original kept for reference:
+
 > Your agent eval is green. Your bill doubled anyway.
 >
 > AgentChaos catches cost/latency/tool-call regressions in tool-using agents in
@@ -90,6 +93,7 @@ runs-against-any-endpoint angle.
 > tokens." Exits non-zero so CI fails.
 >
 > OSS, any HTTP endpoint, no SDK. https://github.com/NoraXu-0111/AgentChaos
+> (⚠ if reusing: move the link to a first reply — links in body kill reach)
 
 ---
 

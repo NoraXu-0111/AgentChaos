@@ -1,0 +1,8 @@
+AgentChaos — chaos reproducibility (seed=42)
+
+Run 1 injections: [('get_order', 'status_code', 503)]
+Run 2 injections: [('get_order', 'status_code', 503)]
+
+Identical across runs: YES (deterministic)
+
+Same seed -> same faults -> same verdict. Replayable in CI.
