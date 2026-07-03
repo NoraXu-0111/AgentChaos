@@ -19,12 +19,15 @@ from agentchaos.detectors.schema import Finding
 from agentchaos.profile.causes import find_causes
 from agentchaos.profile.compare import diff as profile_diff
 from agentchaos.profile.metrics import aggregate
+from agentchaos.replay.detect import detect_replay_divergence
+from agentchaos.replay.schema import Divergence
+from agentchaos.replay.transport import REPLAY_ERROR_PREFIX, RecordedTransport
 from agentchaos.report.terminal import render_terminal
 from agentchaos.runner.coordinator import RunCoordinator
 from agentchaos.scenario.loader import LoaderError, load_scenario, scenario_hash
 from agentchaos.scenario.schema import AgentTarget, Scenario
 from agentchaos.trace.reader import TraceReadError, read_trace
-from agentchaos.trace.schema import RunMeta, TraceEvent
+from agentchaos.trace.schema import RunMeta, TraceEvent, UserTurn
 from agentchaos.transport.base import AgentTransport
 from agentchaos.transport.http import HTTPTransport
 from agentchaos.verdict import (
@@ -229,6 +232,9 @@ def _emit_json_verdict(
     trace_path: Path,
     run_id: str,
     findings: list[Finding],
+    *,
+    divergences: list[Divergence] | None = None,
+    mode: str | None = None,
 ) -> None:
     payload = {
         "outcome": verdict.outcome,
@@ -238,6 +244,10 @@ def _emit_json_verdict(
         "trace_path": str(trace_path),
         "run_id": run_id,
     }
+    if divergences is not None:
+        payload["divergences"] = [d.model_dump() for d in divergences]
+    if mode is not None:
+        payload["mode"] = mode
     typer.echo(_json.dumps(payload, indent=2))
 
 
@@ -360,6 +370,128 @@ def run(
             json_output=json_output,
             seed=seed,
             strict_scenario=strict_scenario,
+        )
+    )
+    raise typer.Exit(code=code)
+
+
+# ----------------------------------------------------------------------------
+# replay
+# ----------------------------------------------------------------------------
+
+
+async def _execute_replay(
+    scenario: Scenario,
+    scenario_path: Path,
+    recording_events: list[TraceEvent],
+    out_path: Path,
+    *,
+    live: bool,
+    quiet: bool,
+    json_output: bool,
+    transport: AgentTransport | None = None,
+) -> int:
+    """Run the scenario through a recorded (or live) transport and verdict with divergences."""
+    # Replay never injects chaos and never starts the proxy.
+    replay_scenario = scenario.model_copy(update={"chaos": None})
+    if transport is None:
+        transport = (
+            _build_transport(scenario.agent) if live else RecordedTransport(recording_events)
+        )
+    coordinator = RunCoordinator(replay_scenario, transport)
+    try:
+        result = await coordinator.run_once(out_path, scenario_path=str(scenario_path))
+    finally:
+        await transport.aclose()
+
+    candidate_trace: list[TraceEvent] = list(read_trace(result.trace_path))
+    metrics = aggregate(candidate_trace)
+    findings = run_detectors(candidate_trace, scenario.budgets)
+    divergences = detect_replay_divergence(recording_events, candidate_trace)
+
+    session_error = result.session.error
+    if session_error is not None and session_error.startswith(REPLAY_ERROR_PREFIX):
+        session_error = None
+
+    verdict = compute_verdict(
+        metrics,
+        scenario.expect,
+        scenario.budgets,
+        final_text=result.session.final_text,
+        session_error=session_error,
+        findings=findings,
+        chaos=None,
+        trace=candidate_trace,
+        divergences=divergences,
+    )
+
+    if json_output:
+        _emit_json_verdict(
+            verdict,
+            result.trace_path,
+            result.run_id,
+            findings,
+            divergences=divergences,
+            mode="live" if live else "offline",
+        )
+    elif not quiet:
+        typer.echo(
+            render_terminal(
+                scenario_name=scenario.name,
+                verdict=verdict,
+                metrics=metrics,
+                diff=None,
+                causes=[],
+                trace_path=result.trace_path,
+                findings=findings,
+            )
+        )
+    return verdict.exit_code
+
+
+@app.command()
+def replay(
+    scenario: Annotated[Path, typer.Argument(help="Scenario YAML file.")],
+    recording: Annotated[Path, typer.Argument(help="Recorded trace from a prior `run --out`.")],
+    out: Annotated[Path | None, typer.Option("--out", help="Replay trace output path.")] = None,
+    live: Annotated[
+        bool,
+        typer.Option("--live", help="Run the agent live and check divergence vs the recording."),
+    ] = False,
+    quiet: Annotated[bool, typer.Option("--quiet", help="Suppress the report.")] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit machine-readable verdict.")
+    ] = False,
+) -> None:
+    """Replay a recorded trace (offline, zero live HTTP by default); exit 5 on divergence."""
+    try:
+        s = load_scenario(scenario)
+    except LoaderError as exc:
+        typer.secho(f"✗ {exc}", err=True, fg=typer.colors.RED)
+        raise typer.Exit(code=EXIT_USAGE_ERROR) from None
+
+    try:
+        recording_events: list[TraceEvent] = list(read_trace(recording))
+    except (FileNotFoundError, TraceReadError) as exc:
+        typer.secho(f"✗ recording trace error: {exc}", err=True, fg=typer.colors.RED)
+        raise typer.Exit(code=EXIT_USAGE_ERROR) from None
+
+    if not any(isinstance(e, UserTurn) for e in recording_events):
+        typer.secho(
+            "✗ recording contains no conversation turns", err=True, fg=typer.colors.RED
+        )
+        raise typer.Exit(code=EXIT_USAGE_ERROR)
+
+    out_path = out if out is not None else _default_out_path()
+    code = asyncio.run(
+        _execute_replay(
+            s,
+            scenario,
+            recording_events,
+            out_path,
+            live=live,
+            quiet=quiet,
+            json_output=json_output,
         )
     )
     raise typer.Exit(code=code)
