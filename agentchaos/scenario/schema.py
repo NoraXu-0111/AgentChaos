@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
 from agentchaos.budget.schema import Budget
+from agentchaos.chaos.policy import ChaosPolicy
 
 
 class AgentTarget(BaseModel):
@@ -50,6 +51,8 @@ class Scenario(BaseModel):
     conversation: list[UserTurn] = Field(..., min_length=1)
     expect: Expectation = Field(default_factory=Expectation)
     budgets: Budget = Field(default_factory=Budget)
+    chaos: ChaosPolicy | None = None
+    seed: int | None = None
     metadata: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("id")

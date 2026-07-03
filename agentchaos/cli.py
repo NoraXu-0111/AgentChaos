@@ -255,7 +255,9 @@ async def _execute_run(
 ) -> int:
     if transport is None:
         transport = _build_transport(scenario.agent)
-    coordinator = RunCoordinator(scenario, transport, seed=seed)
+    # CLI --seed takes precedence over scenario.seed when explicitly passed.
+    effective_seed = seed if seed is not None else scenario.seed
+    coordinator = RunCoordinator(scenario, transport, seed=effective_seed)
     try:
         result = await coordinator.run_once(out_path, scenario_path=str(scenario_path))
     finally:
@@ -292,6 +294,8 @@ async def _execute_run(
         final_text=result.session.final_text,
         session_error=result.session.error,
         findings=findings,
+        chaos=scenario.chaos,
+        trace=candidate_trace,
     )
 
     if json_output:

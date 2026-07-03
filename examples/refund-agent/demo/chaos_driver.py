@@ -26,7 +26,6 @@ for p in (str(REFUND_DIR), str(REPO_ROOT)):
         sys.path.insert(0, p)
 
 from agentchaos.chaos.policy import ChaosPolicy, ChaosTarget, ToolChaosPolicy  # noqa: E402
-
 from agentchaos.profile.metrics import aggregate  # noqa: E402
 from agentchaos.report.terminal import render_terminal  # noqa: E402
 from agentchaos.runner.coordinator import RunCoordinator  # noqa: E402

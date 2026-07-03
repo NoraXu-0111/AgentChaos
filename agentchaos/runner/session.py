@@ -10,6 +10,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 from agentchaos.scenario.schema import Scenario
+from agentchaos.seq import SeqCounter
 from agentchaos.trace.recorder import TraceRecorder
 from agentchaos.trace.schema import (
     AgentTurn,
@@ -60,22 +61,21 @@ class Session:
         transport: AgentTransport,
         recorder: TraceRecorder,
         next_seq: int = 1,
+        seq: SeqCounter | None = None,
     ) -> None:
         self._run_id = run_id
         self._session_id = session_id
         self._scenario = scenario
         self._transport = transport
         self._recorder = recorder
-        self._seq = next_seq
+        self._seq = seq if seq is not None else SeqCounter(start=next_seq)
 
     def _take_seq(self) -> int:
-        s = self._seq
-        self._seq += 1
-        return s
+        return self._seq.take()
 
     @property
     def next_seq(self) -> int:
-        return self._seq
+        return self._seq.value
 
     async def run(self) -> SessionResult:
         t_start = time.perf_counter()
