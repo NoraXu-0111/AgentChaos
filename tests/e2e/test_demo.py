@@ -107,3 +107,38 @@ def test_demo_catches_rag_chunks_regression(tmp_path: Path, server: str) -> None
     assert "regression_budget" in out
     assert "rag_chunks" in out
     assert "5" in out and "12" in out
+
+
+def _write_retry_storm_scenario(path: Path, endpoint: str) -> None:
+    path.write_text(
+        f"""id: refund-retry-storm
+name: refund-retry-storm
+agent:
+  type: http
+  endpoint: "{endpoint}"
+  timeout_s: 10
+conversation:
+  - user: "I want to return my order."
+  - user: "My order number is 12345."
+expect:
+  must_call_tools: [get_order]
+budgets:
+  max_loop_repetitions: 3
+  loop_window: 8
+"""
+    )
+
+
+def test_retry_storm_scenario_fires_loop_detector(tmp_path: Path, server: str) -> None:
+    runner = CliRunner()
+    httpx.post(f"{server}/control/reset")
+    sc = tmp_path / "retry_storm.yaml"
+    _write_retry_storm_scenario(sc, f"{server}/chat?retry_storm=5")
+    out_path = tmp_path / "trace.jsonl"
+    res = runner.invoke(app, ["run", str(sc), "--out", str(out_path)])
+    assert res.exit_code == 2, f"expected exit 2, got\n{res.stdout}"
+    out = res.stdout
+    assert "Verdict: FAIL" in out
+    assert "Detected patterns" in out
+    assert "loop" in out
+    assert "max_loop_repetitions" in out

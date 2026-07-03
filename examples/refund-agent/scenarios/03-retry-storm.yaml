@@ -1,0 +1,23 @@
+id: refund-retry-storm
+name: refund-retry-storm
+description: |
+  Exercises the loop detector by driving the refund agent to call get_order
+  with identical arguments many times in a row.
+
+agent:
+  type: http
+  endpoint: http://127.0.0.1:8080/chat?retry_storm=5
+  timeout_s: 10
+
+conversation:
+  - user: "I want to return my order."
+  - user: "My order number is 12345."
+
+expect:
+  must_call_tools: [get_order]
+
+budgets:
+  # Once the loop detector hits this repetition count, the finding escalates
+  # to a Violation (exit code 2).
+  max_loop_repetitions: 3
+  loop_window: 8
