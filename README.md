@@ -103,6 +103,23 @@ See the [HTTP integration contract](docs/http-contract.md) for the exact request
 
 Exit codes: `0` pass · `1` config error · `2` budget/expectation violation · `4` endpoint unreachable.
 
+## Export to OpenTelemetry
+
+Ship any recorded trace to an OTLP collector as GenAI semantic-convention spans (model, tokens, cost):
+
+```bash
+pip install 'agentchaos-reliability[otel]'
+agentchaos export-otel runs/baseline.jsonl
+```
+
+The default endpoint `http://localhost:4318/v1/traces` works out of the box with a stock collector:
+
+```bash
+docker run -p 4318:4318 otel/opentelemetry-collector
+```
+
+Use `--endpoint`, `--header KEY=VALUE`, and `--service-name` for hosted backends, or `--dry-run` to print the span specs as JSON without exporting (no otel install needed).
+
 ## What it is not
 
 - Not a generic LLM eval platform. Use DeepEval, Braintrust, or LangSmith for answer-quality scoring.
