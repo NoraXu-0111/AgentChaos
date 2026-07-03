@@ -1,0 +1,58 @@
+name: AgentChaos demo
+on:
+  pull_request:
+    paths: ["examples/**", "action.yml", ".github/workflows/agentchaos-demo.yml"]
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  demo:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/refund-agent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install -e ../..
+      - name: Start tools service
+        run: |
+          nohup uvicorn tools.main:app --host 127.0.0.1 --port 8090 > tools.log 2>&1 &
+          echo $! > tools.pid
+          for i in $(seq 1 40); do
+            curl -sf http://127.0.0.1:8090/health > /dev/null && break || sleep 0.5
+          done
+      - name: Start agent (baseline config)
+        run: |
+          RAG_CHUNKS=5 nohup uvicorn server.main:app --host 127.0.0.1 --port 8080 > server.log 2>&1 &
+          echo $! > server.pid
+          for i in $(seq 1 40); do
+            agentchaos doctor scenarios/02-rag-cost-regression.yaml && break || sleep 0.5
+          done
+      - name: Record baseline
+        run: agentchaos run scenarios/02-rag-cost-regression.yaml --out runs/baseline-ci.jsonl
+      - name: Restart agent (regressed config)
+        run: |
+          kill "$(cat server.pid)"
+          # Wait for the old process to fully exit so port 8080 is actually free —
+          # otherwise the new server fails to bind and the old config keeps serving.
+          for i in $(seq 1 40); do
+            kill -0 "$(cat server.pid)" 2>/dev/null || break; sleep 0.5
+          done
+          RAG_CHUNKS=12 nohup uvicorn server.main:app --host 127.0.0.1 --port 8080 > server2.log 2>&1 &
+          echo $! > server.pid
+          for i in $(seq 1 40); do
+            agentchaos doctor scenarios/02-rag-cost-regression.yaml && break || sleep 0.5
+          done
+          grep -q "error while attempting to bind" server2.log && { cat server2.log; exit 1; } || true
+      - name: AgentChaos gate
+        uses: ./
+        with:
+          scenario: scenarios/02-rag-cost-regression.yaml
+          baseline: runs/baseline-ci.jsonl
+          working-directory: examples/refund-agent
+          package: "-e ../.."
+          fail-on: ""   # demo is report-only; the comment shows the FAIL verdict + cost diff
