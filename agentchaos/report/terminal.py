@@ -3,10 +3,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from agentchaos.detectors.schema import Finding, Severity
 from agentchaos.profile.causes import PossibleCause
 from agentchaos.profile.compare import Diff, MetricDelta
 from agentchaos.profile.metrics import Metrics
 from agentchaos.verdict import Verdict
+
+_SEVERITY_ORDER: dict[Severity, int] = {"high": 0, "warn": 1, "info": 2}
 
 # Map metric-delta name → (label, formatter)
 _METRIC_DISPLAY: list[tuple[str, str, str]] = [
@@ -98,6 +101,7 @@ def render_terminal(
     diff: Diff | None,
     causes: list[PossibleCause],
     trace_path: Path | str,
+    findings: list[Finding] | None = None,
 ) -> str:
     """Render the v0 verdict report as a multi-line string."""
     failed_metrics = {
@@ -163,6 +167,17 @@ def render_terminal(
         seq = _compact_sequence([name for (name, _) in metrics.tool_sequence])
         lines.append("Tool sequence:")
         lines.append(f"  {seq}")
+        lines.append("")
+
+    # Detected patterns (findings)
+    if findings:
+        sorted_findings = sorted(
+            findings,
+            key=lambda f: (_SEVERITY_ORDER[f.severity], f.detector, f.description),
+        )
+        lines.append("Detected patterns:")
+        for f in sorted_findings:
+            lines.append(f"  - [{f.severity}]  {f.detector}: {f.description}")
         lines.append("")
 
     # Possible contributors

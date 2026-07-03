@@ -1,0 +1,4 @@
+✓ Scenario parses (refund-happy-path, 2 turn(s))
+✓ Endpoint reachable: http://127.0.0.1:8080/chat (HTTP 200, 3ms, fidelity=full)
+
+0 warning(s), 0 error(s).

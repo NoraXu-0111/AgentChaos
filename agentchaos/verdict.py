@@ -5,8 +5,9 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from agentchaos.budget.check import check_absolute, check_regression
+from agentchaos.budget.check import check_absolute, check_detectors, check_regression
 from agentchaos.budget.schema import Budget
+from agentchaos.detectors.schema import Finding
 from agentchaos.profile.compare import Diff
 from agentchaos.profile.metrics import Metrics
 from agentchaos.scenario.schema import Expectation
@@ -89,6 +90,7 @@ def compute_verdict(
     diff: Diff | None = None,
     final_text: str = "",
     session_error: str | None = None,
+    findings: list[Finding] | None = None,
 ) -> Verdict:
     """Combine all checks into a Verdict.
 
@@ -113,6 +115,7 @@ def compute_verdict(
     violations.extend(check_absolute(metrics, budget))
     if diff is not None:
         violations.extend(check_regression(diff.delta_pct_map(), budget))
+    violations.extend(check_detectors(findings or [], budget))
 
     outcome: Literal["pass", "fail"] = "fail" if violations else "pass"
     exit_code = EXIT_BUDGET_OR_EXPECTATION_FAIL if violations else EXIT_PASS

@@ -1,0 +1,10 @@
+# Generated demo artifacts — regenerate with the scripts in this dir (see README).
+node_modules/
+assets/
+runs/
+out/
+*.mp4
+*.mp3
+*.aiff
+package-lock.json
+RESUME.md

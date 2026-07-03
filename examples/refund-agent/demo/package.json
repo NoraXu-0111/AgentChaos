@@ -1,0 +1,9 @@
+{
+  "name": "agentchaos-demo",
+  "private": true,
+  "type": "module",
+  "description": "Local-only asset generation for the AgentChaos demo video.",
+  "dependencies": {
+    "sharp": "^0.33.5"
+  }
+}

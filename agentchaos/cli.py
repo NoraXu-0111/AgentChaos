@@ -14,6 +14,8 @@ import httpx
 import typer
 
 from agentchaos import __version__
+from agentchaos.detectors.runner import run_detectors
+from agentchaos.detectors.schema import Finding
 from agentchaos.profile.causes import find_causes
 from agentchaos.profile.compare import diff as profile_diff
 from agentchaos.profile.metrics import aggregate
@@ -222,11 +224,17 @@ def _default_out_path() -> Path:
     return Path("runs") / f"run-{datetime.now(UTC).strftime('%Y-%m-%dT%H-%M-%S')}.jsonl"
 
 
-def _emit_json_verdict(verdict: Verdict, trace_path: Path, run_id: str) -> None:
+def _emit_json_verdict(
+    verdict: Verdict,
+    trace_path: Path,
+    run_id: str,
+    findings: list[Finding],
+) -> None:
     payload = {
         "outcome": verdict.outcome,
         "exit_code": verdict.exit_code,
         "violations": [v.model_dump() for v in verdict.violations],
+        "findings": [f.model_dump() for f in findings],
         "trace_path": str(trace_path),
         "run_id": run_id,
     }
@@ -255,6 +263,7 @@ async def _execute_run(
 
     candidate_trace: list[TraceEvent] = list(read_trace(result.trace_path))
     candidate_metrics = aggregate(candidate_trace)
+    findings = run_detectors(candidate_trace, scenario.budgets)
 
     diff_obj = None
     causes: list = []
@@ -282,10 +291,11 @@ async def _execute_run(
         diff=diff_obj,
         final_text=result.session.final_text,
         session_error=result.session.error,
+        findings=findings,
     )
 
     if json_output:
-        _emit_json_verdict(verdict, result.trace_path, result.run_id)
+        _emit_json_verdict(verdict, result.trace_path, result.run_id, findings)
     elif not quiet:
         typer.echo(
             render_terminal(
@@ -295,6 +305,7 @@ async def _execute_run(
                 diff=diff_obj,
                 causes=causes,
                 trace_path=result.trace_path,
+                findings=findings,
             )
         )
     return verdict.exit_code
@@ -378,6 +389,7 @@ def compare(
     drift = b_hash is not None and c_hash is not None and b_hash != c_hash
     d = profile_diff(b_metrics, c_metrics, scenario_drift=drift)
     causes = find_causes(b_trace, c_trace, d)
+    findings = run_detectors(c_trace, budget=None)
 
     # No scenario means no budgets/expectations to enforce — purely informational.
     verdict = Verdict(outcome="pass", violations=[], exit_code=EXIT_PASS)
@@ -390,6 +402,7 @@ def compare(
             "scenario_drift": drift,
             "deltas": [d.model_dump() for d in d.deltas],
             "causes": [c.model_dump() for c in causes],
+            "findings": [f.model_dump() for f in findings],
         }
         typer.echo(_json.dumps(payload, indent=2))
     else:
@@ -401,6 +414,7 @@ def compare(
                 diff=d,
                 causes=causes,
                 trace_path=candidate,
+                findings=findings,
             )
         )
     raise typer.Exit(code=EXIT_PASS)

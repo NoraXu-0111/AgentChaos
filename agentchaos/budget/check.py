@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from agentchaos.budget.schema import Budget
+from agentchaos.detectors.schema import Finding
 from agentchaos.profile.metrics import Metrics
 from agentchaos.violations import Violation
 
@@ -53,6 +54,62 @@ def check_absolute(metrics: Metrics, budget: Budget) -> list[Violation]:
                         f"{label} {_format_value(actual, unit)} exceeds limit "
                         f"{_format_value(limit, unit)}"
                     ),
+                )
+            )
+    return violations
+
+
+def check_detectors(findings: list[Finding], budget: Budget) -> list[Violation]:
+    """Escalate findings to Violations only when the matching budget field is set.
+
+    Mapping:
+      - ``loop`` → ``max_loop_repetitions``
+      - ``retry_storm`` (per-tool) → ``max_retries_per_tool``
+      - ``retry_storm`` (aggregate) → ``max_retries_aggregate``
+      - ``cost_explosion`` → ``max_cost_explosion_factor``
+    """
+    violations: list[Violation] = []
+    for finding in findings:
+        if finding.detector == "loop":
+            if budget.max_loop_repetitions is None:
+                continue
+            violations.append(
+                Violation(
+                    kind="detector",
+                    name="max_loop_repetitions",
+                    detail=finding.description,
+                )
+            )
+        elif finding.detector == "retry_storm":
+            scope = finding.evidence.get("scope")
+            if scope == "per_tool":
+                if budget.max_retries_per_tool is None:
+                    continue
+                violations.append(
+                    Violation(
+                        kind="detector",
+                        name="max_retries_per_tool",
+                        detail=finding.description,
+                    )
+                )
+            elif scope == "aggregate":
+                if budget.max_retries_aggregate is None:
+                    continue
+                violations.append(
+                    Violation(
+                        kind="detector",
+                        name="max_retries_aggregate",
+                        detail=finding.description,
+                    )
+                )
+        elif finding.detector == "cost_explosion":
+            if budget.max_cost_explosion_factor is None:
+                continue
+            violations.append(
+                Violation(
+                    kind="detector",
+                    name="max_cost_explosion_factor",
+                    detail=finding.description,
                 )
             )
     return violations

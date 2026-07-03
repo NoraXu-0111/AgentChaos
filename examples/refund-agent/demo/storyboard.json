@@ -1,0 +1,70 @@
+{
+  "title": "AgentChaos — reliability testing for tool-using AI agents",
+  "resolution": [1920, 1080],
+  "fps": 30,
+  "scenes": [
+    {
+      "id": "01_title",
+      "asset": "broll_title.mp4",
+      "kind": "video",
+      "caption": "AgentChaos",
+      "vo": "Ship a change to your A.I. agent's prompt, model, or retrieval, and you often won't know what broke until it's in production."
+    },
+    {
+      "id": "02_devloop",
+      "asset": "diagram_devloop.png",
+      "kind": "image",
+      "caption": "A reliability gate in your CI",
+      "vo": "AgentChaos is a reliability gate for your agent's C.I. It runs your scenarios on every pull request, and it never scores answer quality."
+    },
+    {
+      "id": "03_regression",
+      "asset": "shot_A2_regression.png",
+      "kind": "image",
+      "caption": "Cost regression, caught",
+      "vo": "Bump your retrieval from five chunks to twelve, and cost quietly jumps sixty-eight percent. AgentChaos catches the regression and fails the run."
+    },
+    {
+      "id": "04_cause",
+      "asset": "diagram_cause.png",
+      "kind": "image",
+      "caption": "Names the root cause",
+      "vo": "Then it names the cause, correlating every metric delta with what actually changed in the trace, right down to the metadata."
+    },
+    {
+      "id": "05_proxy",
+      "asset": "diagram_proxy.png",
+      "kind": "image",
+      "caption": "Seeded chaos proxy",
+      "vo": "It also injects seeded chaos between your agent and its tools."
+    },
+    {
+      "id": "06_chaos",
+      "asset": "shot_B1_chaos.png",
+      "kind": "image",
+      "caption": "Graceful degradation = PASS",
+      "vo": "A guaranteed five-oh-three on get order, and the agent degrades gracefully instead of crashing. That's a pass."
+    },
+    {
+      "id": "07_reproduce",
+      "asset": "shot_B2_reproduce.png",
+      "kind": "image",
+      "caption": "Same seed, same faults",
+      "vo": "Same seed, same faults, every single run. Fully reproducible."
+    },
+    {
+      "id": "08_gate",
+      "asset": "shot_C_gate.png",
+      "kind": "image",
+      "caption": "One gate, distinct exit codes",
+      "vo": "In C.I. it's one gate. Clean changes pass; cost regressions and broken fallbacks get blocked by exit code, before they ship."
+    },
+    {
+      "id": "09_outro",
+      "asset": "broll_outro.mp4",
+      "kind": "video",
+      "caption": "AgentChaos — reliability for tool-using agents",
+      "vo": "AgentChaos. Reliability testing for tool-using agents."
+    }
+  ]
+}

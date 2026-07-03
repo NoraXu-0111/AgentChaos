@@ -28,3 +28,11 @@ class Budget(BaseModel):
     max_latency_regression_pct: float | None = Field(default=None, ge=0)
     max_tool_call_regression_pct: float | None = Field(default=None, ge=0)
     max_input_token_regression_pct: float | None = Field(default=None, ge=0)
+
+    # detector thresholds — when set, the matching detector finding escalates
+    # to a Violation (kind="detector"). Detectors themselves always run.
+    max_loop_repetitions: int | None = Field(default=None, ge=2)
+    loop_window: int | None = Field(default=None, ge=2)
+    max_retries_per_tool: int | None = Field(default=None, ge=1)
+    max_retries_aggregate: int | None = Field(default=None, ge=1)
+    max_cost_explosion_factor: float | None = Field(default=None, gt=1.0)

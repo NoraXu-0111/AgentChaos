@@ -29,15 +29,25 @@ _OUTPUT_TOKEN_COST = 0.00000060
 _ORDER_RE = re.compile(r"\b(\d{4,8})\b")
 
 
-def _rag_chunks(request: Request) -> int:
-    """Read rag_chunks from query param, then env var, default 5."""
-    q = request.query_params.get("rag_chunks")
+def _int_knob(request: Request, name: str, env: str, default: int, *, floor: int) -> int:
+    """Read an int knob from query param, then env var; clamp to ``floor``."""
+    q = request.query_params.get(name)
     if q is not None:
         try:
-            return max(1, int(q))
+            return max(floor, int(q))
         except ValueError:
             pass
-    return max(1, int(os.environ.get("RAG_CHUNKS", "5")))
+    return max(floor, int(os.environ.get(env, str(default))))
+
+
+def _rag_chunks(request: Request) -> int:
+    """Read rag_chunks from query param, then env var, default 5."""
+    return _int_knob(request, "rag_chunks", "RAG_CHUNKS", 5, floor=1)
+
+
+def _retry_storm(request: Request) -> int:
+    """Read retry_storm from query param, then env var, default 0 (disabled)."""
+    return _int_knob(request, "retry_storm", "RETRY_STORM", 0, floor=0)
 
 
 def _cost(input_tokens: int, output_tokens: int) -> float:
@@ -57,6 +67,7 @@ async def chat(request: Request) -> dict[str, Any]:
     session_id = body.get("session_id") or "anon"
     message = (body.get("message") or "").strip()
     rag_chunks = _rag_chunks(request)
+    retry_storm = _retry_storm(request)
 
     state = _SESSIONS.setdefault(session_id, {"turn": 0, "order_id": None})
     state["turn"] += 1
@@ -92,6 +103,18 @@ async def chat(request: Request) -> dict[str, Any]:
     else:
         # Second turn — look up the order and create a return label.
         order_id = state["order_id"]
+        # Retry-storm knob: emit N identical get_order calls before the normal one.
+        for _ in range(retry_storm):
+            events.append(
+                {
+                    "type": "tool_call",
+                    "name": "get_order",
+                    "args": {"order_id": order_id},
+                    "latency_ms": 60,
+                    "result_summary": "ok",
+                    "retries": 0,
+                }
+            )
         events.append(
             {
                 "type": "tool_call",

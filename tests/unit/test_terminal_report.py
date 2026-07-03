@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from agentchaos.budget.schema import Budget
+from agentchaos.detectors.schema import Finding
 from agentchaos.profile.causes import PossibleCause
 from agentchaos.profile.compare import diff
 from agentchaos.profile.metrics import Metrics
@@ -124,6 +125,75 @@ def test_render_scenario_drift_warning() -> None:
         trace_path="runs/x.jsonl",
     )
     assert "Scenario hash drift" in out
+
+
+def test_render_findings_section_sorted_by_severity() -> None:
+    findings = [
+        Finding(
+            detector="loop",
+            severity="warn",
+            description="warn-loop",
+            evidence={},
+        ),
+        Finding(
+            detector="cost_explosion",
+            severity="high",
+            description="high-cost",
+            evidence={},
+        ),
+        Finding(
+            detector="retry_storm",
+            severity="warn",
+            description="warn-retry",
+            evidence={},
+        ),
+    ]
+    verdict = Verdict(outcome="pass", violations=[], exit_code=0)
+    out = render_terminal(
+        scenario_name="t",
+        verdict=verdict,
+        metrics=Metrics(),
+        diff=None,
+        causes=[],
+        trace_path="x",
+        findings=findings,
+    )
+    assert "Detected patterns:" in out
+    # Order: high first; then warns alphabetised by detector.
+    high_idx = out.index("[high]")
+    warn_cost_or_loop_idx = out.index("[warn]")
+    assert high_idx < warn_cost_or_loop_idx
+    # cost_explosion < loop < retry_storm alphabetically for the warn group.
+    # high one is cost_explosion (only high). Then loop warn, then retry warn.
+    loop_idx = out.index("loop: warn-loop")
+    retry_idx = out.index("retry_storm: warn-retry")
+    assert loop_idx < retry_idx
+
+
+def test_render_findings_none_omits_section() -> None:
+    out = render_terminal(
+        scenario_name="t",
+        verdict=Verdict(outcome="pass", violations=[], exit_code=0),
+        metrics=Metrics(),
+        diff=None,
+        causes=[],
+        trace_path="x",
+        findings=None,
+    )
+    assert "Detected patterns" not in out
+
+
+def test_render_findings_empty_omits_section() -> None:
+    out = render_terminal(
+        scenario_name="t",
+        verdict=Verdict(outcome="pass", violations=[], exit_code=0),
+        metrics=Metrics(),
+        diff=None,
+        causes=[],
+        trace_path="x",
+        findings=[],
+    )
+    assert "Detected patterns" not in out
 
 
 def test_render_message_only_fidelity_shows_in_footer() -> None:

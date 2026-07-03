@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from agentchaos.budget.schema import Budget
+from agentchaos.detectors.schema import Finding
 from agentchaos.profile.compare import diff
 from agentchaos.profile.metrics import Metrics
 from agentchaos.scenario.schema import Expectation
@@ -122,6 +123,61 @@ def test_check_expectations_case_insensitive_contains() -> None:
         final_text="here is your refund label",
     )
     assert violations == []
+
+
+def test_findings_with_matching_budget_emit_violation_and_exit_2() -> None:
+    finding = Finding(
+        detector="loop",
+        severity="high",
+        description="repeated tool",
+        evidence={"tool": "x"},
+    )
+    v = compute_verdict(
+        Metrics(),
+        Expectation(),
+        Budget(max_loop_repetitions=3),
+        findings=[finding],
+    )
+    assert v.outcome == "fail"
+    assert v.exit_code == EXIT_BUDGET_OR_EXPECTATION_FAIL
+    assert any(x.kind == "detector" for x in v.violations)
+
+
+def test_findings_without_budget_no_violation() -> None:
+    finding = Finding(
+        detector="loop",
+        severity="high",
+        description="repeated tool",
+        evidence={"tool": "x"},
+    )
+    v = compute_verdict(
+        Metrics(),
+        Expectation(),
+        Budget(),  # no detector budget
+        findings=[finding],
+    )
+    assert v.outcome == "pass"
+    assert v.violations == []
+
+
+def test_transport_error_still_wins_over_detectors() -> None:
+    finding = Finding(
+        detector="loop",
+        severity="high",
+        description="repeated tool",
+        evidence={"tool": "x"},
+    )
+    v = compute_verdict(
+        Metrics(),
+        Expectation(),
+        Budget(max_loop_repetitions=3),
+        findings=[finding],
+        session_error="boom",
+    )
+    assert v.exit_code == EXIT_TRANSPORT_FAIL
+    # Only the transport error, not the detector violation.
+    assert len(v.violations) == 1
+    assert v.violations[0].name == "transport_error"
 
 
 def test_violations_aggregated_in_order() -> None:

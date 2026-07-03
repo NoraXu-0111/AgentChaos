@@ -4,7 +4,8 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from agentchaos.budget import Budget, check_absolute, check_regression
+from agentchaos.budget import Budget, check_absolute, check_detectors, check_regression
+from agentchaos.detectors.schema import Finding
 from agentchaos.profile.metrics import Metrics
 
 
@@ -129,3 +130,81 @@ def test_check_regression_only_when_delta_present() -> None:
     deltas: dict[str, float] = {}
     budget = Budget(max_cost_regression_pct=20)
     assert check_regression(deltas, budget) == []
+
+
+def test_check_detectors_empty_findings_returns_empty() -> None:
+    assert check_detectors([], Budget(max_loop_repetitions=3)) == []
+
+
+def test_check_detectors_no_budget_field_returns_empty() -> None:
+    finding = Finding(
+        detector="loop",
+        severity="high",
+        description="loop happened",
+        evidence={"tool": "get_order", "count": 5},
+    )
+    assert check_detectors([finding], Budget()) == []
+
+
+def test_check_detectors_loop_with_budget_emits_violation() -> None:
+    finding = Finding(
+        detector="loop",
+        severity="high",
+        description="loop happened",
+        evidence={"tool": "get_order", "count": 5},
+    )
+    violations = check_detectors([finding], Budget(max_loop_repetitions=3))
+    assert len(violations) == 1
+    assert violations[0].kind == "detector"
+    assert violations[0].name == "max_loop_repetitions"
+    assert violations[0].detail == "loop happened"
+
+
+def test_check_detectors_routes_per_tool_vs_aggregate() -> None:
+    per_tool = Finding(
+        detector="retry_storm",
+        severity="high",
+        description="per-tool storm",
+        evidence={"scope": "per_tool", "tool": "x", "retries": 10, "threshold": 3},
+    )
+    agg = Finding(
+        detector="retry_storm",
+        severity="high",
+        description="aggregate storm",
+        evidence={"scope": "aggregate", "retries": 12, "threshold": 6},
+    )
+    # Only per-tool budget set → only per-tool violation.
+    violations = check_detectors(
+        [per_tool, agg], Budget(max_retries_per_tool=3)
+    )
+    assert len(violations) == 1
+    assert violations[0].name == "max_retries_per_tool"
+
+    # Only aggregate budget set → only aggregate violation.
+    violations = check_detectors(
+        [per_tool, agg], Budget(max_retries_aggregate=6)
+    )
+    assert len(violations) == 1
+    assert violations[0].name == "max_retries_aggregate"
+
+    # Both budgets set → both fire.
+    violations = check_detectors(
+        [per_tool, agg],
+        Budget(max_retries_per_tool=3, max_retries_aggregate=6),
+    )
+    names = {v.name for v in violations}
+    assert names == {"max_retries_per_tool", "max_retries_aggregate"}
+
+
+def test_check_detectors_cost_explosion_with_budget() -> None:
+    finding = Finding(
+        detector="cost_explosion",
+        severity="high",
+        description="big cost",
+        evidence={"factor": 20.0},
+    )
+    violations = check_detectors(
+        [finding], Budget(max_cost_explosion_factor=5.0)
+    )
+    assert len(violations) == 1
+    assert violations[0].name == "max_cost_explosion_factor"

@@ -16,3 +16,11 @@ runs/
 !**/runs/.gitkeep
 !examples/**/runs/baseline.jsonl
 .env
+
+# Local demo secrets
+.demo.env
+
+# Local agent tooling (Claude Code / skills installs)
+.claude/
+.agents/
+skills-lock.json
