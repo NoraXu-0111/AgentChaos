@@ -1,0 +1,148 @@
+name: "AgentChaos"
+description: "Reliability gate for tool-using AI agents: run a scenario against a baseline, post the cost diff + verdict as a PR comment, emit JUnit XML."
+branding:
+  icon: "zap"
+  color: "orange"
+
+inputs:
+  scenario:
+    description: "Path to the scenario YAML file."
+    required: true
+  baseline:
+    description: "Path to a baseline trace (.jsonl) to diff against. Empty = no baseline (first run)."
+    required: false
+    default: ""
+  out:
+    description: "Trace output path."
+    required: false
+    default: "agentchaos-run.jsonl"
+  md-out:
+    description: "Markdown report output path."
+    required: false
+    default: "agentchaos-report.md"
+  junit-out:
+    description: "JUnit XML output path."
+    required: false
+    default: "agentchaos-junit.xml"
+  seed:
+    description: "Deterministic seed passed to `agentchaos run --seed`. Empty = scenario default."
+    required: false
+    default: ""
+  comment:
+    description: "Post/update the PR comment (true/false)."
+    required: false
+    default: "true"
+  github-token:
+    description: "Token used to post the PR comment."
+    required: false
+    default: ${{ github.token }}
+  fail-on:
+    description: "Comma-separated agentchaos exit codes that fail the job. Empty string = never fail (report-only)."
+    required: false
+    default: "1,2,3,4,5"
+  package:
+    description: "pip install target for agentchaos (e.g. 'agentchaos-reliability==0.2.0' or '-e .')."
+    required: false
+    default: "agentchaos-reliability"
+  python-version:
+    description: "Python version for actions/setup-python."
+    required: false
+    default: "3.12"
+  working-directory:
+    description: "Directory to run in (scenario/baseline paths resolve relative to it)."
+    required: false
+    default: "."
+
+outputs:
+  exit-code:
+    description: "agentchaos run exit code (0 pass, 2 budget/expectation, 3 chaos, 4 transport, 5 replay)."
+    value: ${{ steps.run.outputs.exit-code }}
+  outcome:
+    description: "pass or fail."
+    value: ${{ steps.run.outputs.outcome }}
+  md-path:
+    description: "Path to the markdown report."
+    value: ${{ steps.run.outputs.md-path }}
+  junit-path:
+    description: "Path to the JUnit XML report."
+    value: ${{ steps.run.outputs.junit-path }}
+  trace-path:
+    description: "Path to the run trace."
+    value: ${{ steps.run.outputs.trace-path }}
+
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install AgentChaos
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: python -m pip install --quiet ${{ inputs.package }}
+
+    - name: Run scenario
+      id: run
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        set +e
+        args=( "${{ inputs.scenario }}"
+               --out "${{ inputs.out }}"
+               --md-out "${{ inputs.md-out }}"
+               --junit-out "${{ inputs.junit-out }}" )
+        [ -n "${{ inputs.baseline }}" ] && args+=( --baseline "${{ inputs.baseline }}" )
+        [ -n "${{ inputs.seed }}" ] && args+=( --seed "${{ inputs.seed }}" )
+        agentchaos run "${args[@]}"
+        code=$?
+        set -e
+        outcome=pass; [ "$code" -ne 0 ] && outcome=fail
+        {
+          echo "exit-code=$code"
+          echo "outcome=$outcome"
+          echo "md-path=${{ inputs.md-out }}"
+          echo "junit-path=${{ inputs.junit-out }}"
+          echo "trace-path=${{ inputs.out }}"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Post PR comment
+      if: ${{ inputs.comment == 'true' && github.event_name == 'pull_request' }}
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+      run: |
+        MD="${{ inputs.md-out }}"
+        if [ ! -f "$MD" ]; then
+          echo "::warning::AgentChaos markdown report not found; skipping comment"
+          exit 0
+        fi
+        MARKER="$(head -n1 "$MD")"
+        COMMENT_ID="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+          --paginate --jq ".[] | select(.body | startswith(\"${MARKER}\")) | .id" | head -n1)"
+        if [ -n "$COMMENT_ID" ]; then
+          gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${COMMENT_ID}" \
+            -F body=@"$MD" >/dev/null \
+            || echo "::warning::AgentChaos could not update the PR comment (read-only token?)"
+        else
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+            -F body=@"$MD" >/dev/null \
+            || echo "::warning::AgentChaos could not post the PR comment (read-only token?)"
+        fi
+
+    - name: Enforce exit code
+      shell: bash
+      env:
+        CODE: ${{ steps.run.outputs.exit-code }}
+        FAIL_ON: ${{ inputs.fail-on }}
+      run: |
+        [ -z "$FAIL_ON" ] && exit 0
+        IFS=',' read -ra codes <<< "$FAIL_ON"
+        for c in "${codes[@]}"; do
+          if [ "$(echo "$c" | tr -d ' ')" = "$CODE" ]; then
+            echo "AgentChaos failed with exit code $CODE"
+            exit "$CODE"
+          fi
+        done

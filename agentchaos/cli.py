@@ -24,6 +24,8 @@ from agentchaos.profile.metrics import aggregate
 from agentchaos.replay.detect import detect_replay_divergence
 from agentchaos.replay.schema import Divergence
 from agentchaos.replay.transport import REPLAY_ERROR_PREFIX, RecordedTransport
+from agentchaos.report.junit import render_junit
+from agentchaos.report.markdown import render_markdown
 from agentchaos.report.terminal import render_terminal
 from agentchaos.runner.coordinator import RunCoordinator
 from agentchaos.scenario.loader import LoaderError, load_scenario, scenario_hash
@@ -253,6 +255,12 @@ def _emit_json_verdict(
     typer.echo(_json.dumps(payload, indent=2))
 
 
+def _write_text_report(path: Path, content: str) -> None:
+    """Create parent dirs and write a report file as UTF-8 (trailing newline appended)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content + "\n", encoding="utf-8")
+
+
 async def _execute_run(
     scenario: Scenario,
     scenario_path: Path,
@@ -263,6 +271,8 @@ async def _execute_run(
     json_output: bool,
     seed: int | None,
     strict_scenario: bool,
+    md_out: Path | None = None,
+    junit_out: Path | None = None,
     transport: AgentTransport | None = None,
 ) -> int:
     if transport is None:
@@ -310,6 +320,33 @@ async def _execute_run(
         trace=candidate_trace,
     )
 
+    try:
+        if md_out is not None:
+            _write_text_report(
+                md_out,
+                render_markdown(
+                    scenario_name=scenario.name,
+                    verdict=verdict,
+                    metrics=candidate_metrics,
+                    diff=diff_obj,
+                    causes=causes,
+                    trace_path=result.trace_path,
+                    findings=findings,
+                ),
+            )
+        if junit_out is not None:
+            _write_text_report(
+                junit_out,
+                render_junit(
+                    scenario_name=scenario.name,
+                    verdict=verdict,
+                    metrics=candidate_metrics,
+                ),
+            )
+    except OSError as exc:
+        typer.secho(f"✗ report write error: {exc}", err=True, fg=typer.colors.RED)
+        return EXIT_USAGE_ERROR
+
     if json_output:
         _emit_json_verdict(verdict, result.trace_path, result.run_id, findings)
     elif not quiet:
@@ -353,6 +390,14 @@ def run(
     strict_scenario: Annotated[
         bool, typer.Option("--strict-scenario", help="Fail on scenario hash drift."),
     ] = False,
+    md_out: Annotated[
+        Path | None,
+        typer.Option("--md-out", help="Write the report as GitHub-flavored markdown to PATH."),
+    ] = None,
+    junit_out: Annotated[
+        Path | None,
+        typer.Option("--junit-out", help="Write a JUnit XML report to PATH."),
+    ] = None,
 ) -> None:
     """Execute a scenario and emit a trace + verdict."""
     try:
@@ -372,6 +417,8 @@ def run(
             json_output=json_output,
             seed=seed,
             strict_scenario=strict_scenario,
+            md_out=md_out,
+            junit_out=junit_out,
         )
     )
     raise typer.Exit(code=code)

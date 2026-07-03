@@ -103,6 +103,19 @@ See the [HTTP integration contract](docs/http-contract.md) for the exact request
 
 Exit codes: `0` pass · `1` config error · `2` budget/expectation violation · `4` endpoint unreachable.
 
+## GitHub Action
+
+Gate PRs on agent reliability with one step — it runs a scenario against a baseline, posts the cost diff + verdict as a PR comment, and emits JUnit XML:
+
+```yaml
+- uses: NoraXu-0111/AgentChaos@v1
+  with:
+    scenario: scenarios/refund.yaml
+    baseline: runs/baseline.jsonl
+```
+
+Requires `pull-requests: write` permission for the comment. See [examples/action-demo](examples/action-demo/) for all inputs and local reproduction steps, and `agentchaos run --md-out report.md --junit-out junit.xml` to produce the same reports anywhere.
+
 ## Export to OpenTelemetry
 
 Ship any recorded trace to an OTLP collector as GenAI semantic-convention spans (model, tokens, cost):
