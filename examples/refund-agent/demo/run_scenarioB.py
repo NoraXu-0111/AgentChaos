@@ -32,13 +32,13 @@ async def main() -> int:
     caps_dir.mkdir(exist_ok=True)
 
     report1, tr1, code1 = await run_chaos(agent_app, tools_app, out_dir / "chaos1.jsonl")
-    report2, tr2, code2 = await run_chaos(agent_app, tools_app, out_dir / "chaos2.jsonl")
+    _report2, tr2, _code2 = await run_chaos(agent_app, tools_app, out_dir / "chaos2.jsonl")
 
     (caps_dir / "B1_chaos.txt").write_text(report1 + "\n")
     print(report1)
     print("\n" + "=" * 60 + "\n")
 
-    from chaos_driver import ChaosInjected  # noqa: E402
+    from chaos_driver import ChaosInjected
 
     def positions(trace: list) -> list[tuple[str, str, int]]:
         return [

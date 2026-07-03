@@ -92,7 +92,7 @@ async def chat(request: Request) -> dict[str, Any]:
     order_id = state["order_id"]
     async with httpx.AsyncClient() as client:
         # No try/except: an injected 503 raises HTTPStatusError → FastAPI 500.
-        order_resp = await _call_tool(client, "get_order", {"order_id": order_id})
+        _ = await _call_tool(client, "get_order", {"order_id": order_id})
         events.append({
             "type": "tool_call", "name": "get_order",
             "args": {"order_id": order_id}, "result_summary": "ok", "retries": 0,
