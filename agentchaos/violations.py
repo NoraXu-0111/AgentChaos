@@ -5,7 +5,9 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-ViolationKind = Literal["expectation", "budget", "regression_budget", "detector", "chaos"]
+ViolationKind = Literal[
+    "expectation", "budget", "regression_budget", "detector", "chaos", "replay"
+]
 
 
 class Violation(BaseModel):

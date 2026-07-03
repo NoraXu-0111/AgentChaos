@@ -18,6 +18,7 @@ All phases 0-8 complete. Full suite green (123 tests passing).
 | 6 | Verdict + Terminal report | done | — |
 | 7 | CLI wiring | done | init / doctor / run / compare |
 | 8 | Demo + README | done | refund-agent example + e2e demo test |
+| 11 | Record/Replay (v1) | done | RecordedTransport, divergence detector, `replay` CLI, exit 5 |
 
 ## Decisions and deviations
 

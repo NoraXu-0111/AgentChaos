@@ -12,6 +12,8 @@ from agentchaos.chaos.policy import ChaosPolicy
 from agentchaos.detectors.schema import Finding
 from agentchaos.profile.compare import Diff
 from agentchaos.profile.metrics import Metrics
+from agentchaos.replay.detect import divergences_to_violations
+from agentchaos.replay.schema import Divergence
 from agentchaos.scenario.schema import Expectation
 from agentchaos.trace.schema import AgentTurn, ChaosInjected, TraceEvent
 from agentchaos.violations import Violation
@@ -22,6 +24,7 @@ EXIT_USAGE_ERROR = 1
 EXIT_BUDGET_OR_EXPECTATION_FAIL = 2
 EXIT_CHAOS_FAIL = 3
 EXIT_TRANSPORT_FAIL = 4
+EXIT_REPLAY_DIVERGENCE = 5
 
 
 class Verdict(BaseModel):
@@ -138,12 +141,14 @@ def compute_verdict(
     findings: list[Finding] | None = None,
     chaos: ChaosPolicy | None = None,
     trace: Iterable[TraceEvent] | None = None,
+    divergences: list[Divergence] | None = None,
 ) -> Verdict:
     """Combine all checks into a Verdict.
 
-    Precedence: a transport-level session error (exit 4) short-circuits
-    everything. Otherwise chaos failures (exit 3) dominate budget/expectation
-    failures (exit 2).
+    Precedence: transport session error (exit 4) > replay divergence (exit 5)
+    > chaos failure (exit 3) > budget/expectation/detector failure (exit 2).
+    Callers strip session errors prefixed with ``replay_divergence:`` before
+    calling, so a divergence-caused stop resolves to 5, not 4.
     """
     if session_error is not None:
         return Verdict(
@@ -158,6 +163,7 @@ def compute_verdict(
             exit_code=EXIT_TRANSPORT_FAIL,
         )
 
+    replay_violations = divergences_to_violations(divergences or [])
     trace_list = list(trace) if trace is not None else []
     chaos_violations = check_chaos_expectations(chaos, trace_list, session_error)
 
@@ -168,10 +174,15 @@ def compute_verdict(
         other_violations.extend(check_regression(diff.delta_pct_map(), budget))
     other_violations.extend(check_detectors(findings or [], budget))
 
-    violations = chaos_violations + other_violations
+    violations = replay_violations + chaos_violations + other_violations
     if not violations:
         return Verdict(outcome="pass", violations=violations, exit_code=EXIT_PASS)
 
-    exit_code = EXIT_CHAOS_FAIL if chaos_violations else EXIT_BUDGET_OR_EXPECTATION_FAIL
+    if replay_violations:
+        exit_code = EXIT_REPLAY_DIVERGENCE
+    elif chaos_violations:
+        exit_code = EXIT_CHAOS_FAIL
+    else:
+        exit_code = EXIT_BUDGET_OR_EXPECTATION_FAIL
     outcome: Literal["pass", "fail"] = "fail"
     return Verdict(outcome=outcome, violations=violations, exit_code=exit_code)
