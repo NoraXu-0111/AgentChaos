@@ -22,7 +22,7 @@ jobs:
       - name: Create venv
         run: uv venv -p ${{ matrix.python }} .venv
       - name: Install
-        run: uv pip install -e ".[dev]"
+        run: uv pip install -e ".[dev,otel]"
       - name: Lint
         run: uv run ruff check .
       - name: Type check

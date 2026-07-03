@@ -8,6 +8,7 @@ import re
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from types import ModuleType
 from typing import Annotated
 
 import httpx
@@ -16,6 +17,7 @@ import typer
 from agentchaos import __version__
 from agentchaos.detectors.runner import run_detectors
 from agentchaos.detectors.schema import Finding
+from agentchaos.otel.spans import SpanBuildError, build_spans
 from agentchaos.profile.causes import find_causes
 from agentchaos.profile.compare import diff as profile_diff
 from agentchaos.profile.metrics import aggregate
@@ -561,6 +563,93 @@ def _scenario_name_from_trace(trace: list[TraceEvent]) -> str | None:
         if isinstance(ev, RunMeta):
             return ev.scenario_name
     return None
+
+
+# ----------------------------------------------------------------------------
+# export-otel
+# ----------------------------------------------------------------------------
+
+
+def _load_otel_emit() -> ModuleType:
+    """Import agentchaos.otel.emit lazily; ModuleNotFoundError means the otel extra is missing."""
+    import agentchaos.otel.emit
+
+    return agentchaos.otel.emit
+
+
+def _parse_otel_headers(pairs: list[str]) -> dict[str, str]:
+    """Parse repeatable KEY=VALUE --header values; raise typer.BadParameter on malformed input."""
+    headers: dict[str, str] = {}
+    for pair in pairs:
+        key, sep, value = pair.partition("=")
+        if not sep or not key:
+            raise typer.BadParameter(
+                f"expected KEY=VALUE, got {pair!r}", param_hint="--header"
+            )
+        headers[key] = value
+    return headers
+
+
+@app.command("export-otel")
+def export_otel(
+    trace: Annotated[Path, typer.Argument(help="Trace JSONL from a prior `run --out`.")],
+    endpoint: Annotated[
+        str,
+        typer.Option("--endpoint", help="OTLP HTTP traces endpoint."),
+    ] = "http://localhost:4318/v1/traces",
+    header: Annotated[
+        list[str] | None,
+        typer.Option("--header", help="Extra OTLP header as KEY=VALUE (repeatable)."),
+    ] = None,
+    service_name: Annotated[
+        str, typer.Option("--service-name", help="OTel service.name resource attribute."),
+    ] = "agentchaos",
+    timeout_s: Annotated[
+        float, typer.Option("--timeout-s", help="Export timeout in seconds."),
+    ] = 10.0,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Print span specs as JSON lines to stdout; no export."),
+    ] = False,
+) -> None:
+    """Export a trace to an OTLP collector as GenAI semantic-convention spans."""
+    try:
+        events: list[TraceEvent] = list(read_trace(trace))
+        specs = build_spans(events)
+    except (FileNotFoundError, TraceReadError, SpanBuildError) as exc:
+        typer.secho(f"✗ {exc}", err=True, fg=typer.colors.RED)
+        raise typer.Exit(code=EXIT_USAGE_ERROR) from None
+
+    if dry_run:
+        for spec in specs:
+            typer.echo(spec.model_dump_json())
+        typer.echo(f"{len(specs)} span(s) (dry run)")
+        raise typer.Exit(code=EXIT_PASS)
+
+    headers = _parse_otel_headers(header or [])
+
+    try:
+        emit = _load_otel_emit()
+    except ModuleNotFoundError:
+        typer.secho(
+            "✗ export-otel requires the otel extra: pip install 'agentchaos-reliability[otel]'",
+            err=True, fg=typer.colors.RED,
+        )
+        raise typer.Exit(code=EXIT_USAGE_ERROR) from None
+
+    service_version = next(
+        (ev.agentchaos_version for ev in events if isinstance(ev, RunMeta)), None
+    )
+    exporter = emit.make_otlp_http_exporter(endpoint, headers=headers, timeout_s=timeout_s)
+    try:
+        count = emit.emit_spans(
+            specs, exporter, service_name=service_name, service_version=service_version
+        )
+    except emit.OtelExportError as exc:
+        typer.secho(f"✗ {exc}", err=True, fg=typer.colors.RED)
+        raise typer.Exit(code=EXIT_TRANSPORT_FAIL) from None
+    typer.echo(f"Exported {count} span(s) to {endpoint}")
+    raise typer.Exit(code=EXIT_PASS)
 
 
 # Suppress unused-import warnings on these symbols (kept for re-export / typing).
